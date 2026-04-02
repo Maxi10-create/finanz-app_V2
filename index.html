@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finanzdashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="config.js"></script>
+  <script defer src="auth.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body class="theme-blue">
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <h1>Finanzdashboard</h1>
+      <div id="userSelection" class="login-user-grid"></div>
+      <div id="passwordSection" class="password-section" style="display:none;">
+        <p id="selectedUserName" class="selected-user-name"></p>
+        <label>
+          Passwort
+          <input type="password" id="loginPassword" autocomplete="current-password" />
+        </label>
+        <button id="loginBtn" class="btn btn-primary btn-full">Einloggen</button>
+      </div>
+      <div id="loginMessage" class="login-message"></div>
+    </div>
+  </div>
+
+  <div class="app-shell" id="appShell" style="display:none;">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">€</div>
+        <div class="brand-title">Finanzdashboard</div>
+      </div>
+
+      <nav class="nav" id="tabs">
+        <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="nav-btn" data-tab="bookings">Buchungen</button>
+        <button class="nav-btn" data-tab="urlaub">Urlaub</button>
+        <button class="nav-btn" data-tab="zentrale">Zentrale</button>
+      </nav>
+
+      <section class="side-card">
+        <h3>Zeitraum & Filter</h3>
+        <label>
+          Endmonat
+          <input type="month" id="filterEndMonth" />
+        </label>
+        <label>
+          Zeitraum (Monate)
+          <select id="rangeMonths">
+            <option value="3">3</option>
+            <option value="6">6</option>
+            <option value="12" selected>12</option>
+            <option value="24">24</option>
+            <option value="36">36</option>
+          </select>
+        </label>
+        <label>
+          Kategorie-Detail
+          <select id="filterMainCategory">
+            <option value="">Alle</option>
+          </select>
+        </label>
+        <label>
+          Kostenanzeige
+          <select id="chartMode">
+            <option value="currency">€</option>
+            <option value="percent">% vom Einkommen</option>
+          </select>
+        </label>
+        <label>
+          Zusammensetzung
+          <select id="compositionMode">
+            <option value="month">Aktueller Monat</option>
+            <option value="range">Zeitraum</option>
+            <option value="total">Gesamt</option>
+          </select>
+        </label>
+        <button id="reloadBtn" class="btn btn-primary btn-full">Daten neu laden</button>
+        <div id="syncStatus" class="sync-status">Noch nicht synchronisiert</div>
+      </section>
+
+      <section class="side-card">
+        <h3>Nutzer</h3>
+        <ul class="mini-list">
+          <li><span>Aktiv</span><span id="activeUserLabel" class="pill">—</span></li>
+          <li><span>Theme</span><span id="themeLabel" class="pill">—</span></li>
+        </ul>
+        <button id="logoutBtn" class="btn btn-ghost btn-full">Logout</button>
+      </section>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="pageTitle">Finanzdashboard – Maximilian Hofer</h1>
+        <div id="messageBox"></div>
+      </header>
+
+      <section class="panel active" id="panel-dashboard">
+        <div class="hero-grid">
+          <div class="hero-card gradient-card">
+            <div class="hero-label">Verfügbar im Endmonat</div>
+            <div class="hero-value" id="heroAvailable">0,00 €</div>
+            <div class="hero-sub" id="heroAvailableSub">Einnahmen minus Kosten</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-label">Fixkosten</div>
+            <div class="hero-value" id="heroFixedCosts">0,00 €</div>
+            <div class="hero-sub" id="heroFixedCostsSub">Aktueller Monat</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-label">Saldo anderer Nutzer</div>
+            <div class="hero-value" id="heroPeerBalance">0,00 €</div>
+            <div class="hero-sub" id="heroPeerLabel">Gemeinsame Verrechnung</div>
+          </div>
+        </div>
+
+        <div class="kpi-grid" id="kpiGrid"></div>
+
+        <section class="card master-card">
+          <div class="card-header">
+            <div>
+              <h2>Master Chart</h2>
+              <p>Einkommen, totale Kosten, Fixkosten und variable Kosten über Zeit</p>
+            </div>
+          </div>
+          <canvas id="masterChart"></canvas>
+        </section>
+
+        <div class="chart-grid">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Fixkosten-Zusammensetzung</h2>
+                <p id="fixedCompositionLabel">Aktueller Monat</p>
+              </div>
+            </div>
+            <canvas id="fixedCompositionChart"></canvas>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Variable Kosten-Zusammensetzung</h2>
+                <p id="variableCompositionLabel">Aktueller Monat</p>
+              </div>
+            </div>
+            <canvas id="variableCompositionChart"></canvas>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Kostenaufteilung pro Kategorie</h2>
+              <p>Nach Hauptkategorie auswählbar</p>
+            </div>
+          </div>
+          <canvas id="categoryBreakdownChart"></canvas>
+        </section>
+
+        <div class="table-grid">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Überblick Endmonat</h2>
+              </div>
+            </div>
+            <table class="data-table" id="monthOverviewTable">
+              <thead>
+                <tr><th>Kennzahl</th><th>Wert</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Überblick Zeitraum</h2>
+              </div>
+            </div>
+            <table class="data-table" id="rangeOverviewTable">
+              <thead>
+                <tr><th>Kennzahl</th><th>Wert</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Hauptkategorien Monat vs. Zeitraum</h2>
+            </div>
+          </div>
+          <table class="data-table" id="categoryCompareTable">
+            <thead>
+              <tr><th>Hauptkategorie</th><th>Monat</th><th>Zeitraum</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+      </section>
+
+      <section class="panel" id="panel-bookings">
+        <div class="two-col">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Haushaltsbuchung</h2>
+                <p id="bookingFormModeLabel">Neue Buchung</p>
+              </div>
+            </div>
+            <form id="transactionForm" class="form-grid">
+              <input type="hidden" name="id" />
+              <label>Datum<input type="date" name="date" required></label>
+              <label>Beschreibung<input type="text" name="title" required></label>
+              <label>Hauptkategorie
+                <select name="main_category" id="bookingMainCategory" required></select>
+              </label>
+              <label>Unterkategorie
+                <select name="sub_category" id="bookingSubCategory" required></select>
+              </label>
+              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+              <label>Bezahlt von
+                <select name="paid_by" required>
+                  <option>Hofer Maximilian</option>
+                  <option>Jana March</option>
+                </select>
+              </label>
+              <label>Split für aktuellen Nutzer
+                <select name="split_percent">
+                  <option value="100">100 %</option>
+                  <option value="50" selected>50 %</option>
+                  <option value="0">0 %</option>
+                </select>
+              </label>
+              <label>Status
+                <select name="status">
+                  <option>bezahlt</option>
+                  <option>offen</option>
+                  <option>geplant</option>
+                </select>
+              </label>
+              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+              <div class="full actions-row">
+                <button class="btn btn-primary" type="submit" id="transactionSubmitBtn">Buchung speichern</button>
+                <button class="btn btn-ghost" type="button" id="transactionCancelEditBtn" style="display:none;">Bearbeitung abbrechen</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Haushaltsbuchungen</h2>
+              </div>
+            </div>
+            <table class="data-table" id="transactionsTable">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Beschreibung</th>
+                  <th>Kategorie</th>
+                  <th>Betrag</th>
+                  <th>Bezahlt von</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-urlaub">
+        <div class="two-col">
+          <section class="stack-col">
+            <section class="card">
+              <div class="card-header">
+                <div>
+                  <h2>Reise</h2>
+                  <p id="tripFormModeLabel">Neue Reise</p>
+                </div>
+              </div>
+              <form id="tripForm" class="form-grid">
+                <input type="hidden" name="trip_id" />
+                <label>Titel<input type="text" name="title" required></label>
+                <label>Destination<input type="text" name="destination" required></label>
+                <label>Von<input type="date" name="start_date" required></label>
+                <label>Bis<input type="date" name="end_date" required></label>
+                <label>Geplantes Budget (€)<input type="number" name="planned_budget" step="0.01"></label>
+                <label>Status
+                  <select name="status">
+                    <option>Idee</option>
+                    <option>geplant</option>
+                    <option>gebucht</option>
+                    <option>abgeschlossen</option>
+                  </select>
+                </label>
+                <label>Mit
+                  <select name="travel_with">
+                    <option>Jana March</option>
+                    <option>allein</option>
+                    <option>sonstige</option>
+                  </select>
+                </label>
+                <label class="full">Beschreibung<textarea name="description" rows="3"></textarea></label>
+                <div class="full actions-row">
+                  <button class="btn btn-primary" type="submit" id="tripSubmitBtn">Reise speichern</button>
+                  <button class="btn btn-ghost" type="button" id="tripCancelEditBtn" style="display:none;">Bearbeitung abbrechen</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="card">
+              <div class="card-header">
+                <div>
+                  <h2>Urlaubsausgabe</h2>
+                  <p id="tripExpenseFormModeLabel">Neue Urlaubsausgabe</p>
+                </div>
+              </div>
+              <form id="tripExpenseForm" class="form-grid">
+                <input type="hidden" name="id" />
+                <label>Reise
+                  <select name="trip_id" id="tripExpenseTripId" required></select>
+                </label>
+                <label>Datum<input type="date" name="date" required></label>
+                <label>Beschreibung<input type="text" name="title" required></label>
+                <label>Hauptkategorie
+                  <select name="main_category" id="tripMainCategory" required></select>
+                </label>
+                <label>Unterkategorie
+                  <select name="sub_category" id="tripSubCategory" required></select>
+                </label>
+                <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+                <label>Bezahlt von
+                  <select name="paid_by" required>
+                    <option>Hofer Maximilian</option>
+                    <option>Jana March</option>
+                  </select>
+                </label>
+                <label>Split für aktuellen Nutzer
+                  <select name="split_percent">
+                    <option value="100">100 %</option>
+                    <option value="50" selected>50 %</option>
+                    <option value="0">0 %</option>
+                  </select>
+                </label>
+                <label>Status
+                  <select name="status">
+                    <option>bezahlt</option>
+                    <option>gebucht</option>
+                    <option>geplant</option>
+                  </select>
+                </label>
+                <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+                <div class="full actions-row">
+                  <button class="btn btn-primary" type="submit" id="tripExpenseSubmitBtn">Urlaubsausgabe speichern</button>
+                  <button class="btn btn-ghost" type="button" id="tripExpenseCancelEditBtn" style="display:none;">Bearbeitung abbrechen</button>
+                </div>
+              </form>
+            </section>
+          </section>
+
+          <section class="stack-col">
+            <section class="card">
+              <div class="card-header">
+                <div>
+                  <h2>Reisen</h2>
+                </div>
+              </div>
+              <table class="data-table" id="tripsTable">
+                <thead>
+                  <tr><th>Titel</th><th>Ziel</th><th>Zeitraum</th><th>Budget</th><th>Aktion</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </section>
+
+            <section class="card">
+              <div class="card-header">
+                <div>
+                  <h2>Urlaubsausgaben</h2>
+                </div>
+              </div>
+              <table class="data-table" id="tripExpensesTable">
+                <thead>
+                  <tr><th>Reise</th><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Aktion</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </section>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-zentrale">
+        <div class="three-col">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Kategorien</h2>
+                <p id="categoryFormModeLabel">Neue Kategorie</p>
+              </div>
+            </div>
+            <form id="categoryForm" class="form-grid compact-form">
+              <input type="hidden" name="id" />
+              <label>Modul
+                <select name="module">
+                  <option>Haushalt</option>
+                  <option>Urlaub</option>
+                </select>
+              </label>
+              <label>Hauptkategorie<input type="text" name="main_category" required></label>
+              <label>Unterkategorie<input type="text" name="sub_category" required></label>
+              <label>Sichtbar für anderen Nutzer?
+                <select name="visible_to_other">
+                  <option value="ja">ja</option>
+                  <option value="nein">nein</option>
+                </select>
+              </label>
+              <div class="full actions-row">
+                <button class="btn btn-primary" type="submit" id="categorySubmitBtn">Kategorie speichern</button>
+                <button class="btn btn-ghost" type="button" id="categoryCancelEditBtn" style="display:none;">Bearbeitung abbrechen</button>
+              </div>
+            </form>
+            <table class="data-table" id="categoriesTable">
+              <thead>
+                <tr><th>Modul</th><th>Hauptkategorie</th><th>Unterkategorie</th><th>Aktion</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Fixkosten</h2>
+                <p id="fixedCostFormModeLabel">Neue Fixkostenposition</p>
+              </div>
+            </div>
+            <form id="fixedCostForm" class="form-grid compact-form">
+              <input type="hidden" name="id" />
+              <label>Titel<input type="text" name="title" required></label>
+              <label>Hauptkategorie
+                <select name="main_category" id="fixedMainCategory" required></select>
+              </label>
+              <label>Unterkategorie
+                <select name="sub_category" id="fixedSubCategory" required></select>
+              </label>
+              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+              <label>Frequenz
+                <select name="frequency">
+                  <option>monatlich</option>
+                  <option>quartalsweise</option>
+                  <option>jährlich</option>
+                </select>
+              </label>
+              <label>Startmonat<input type="month" name="start_month"></label>
+              <label>Endmonat<input type="month" name="end_month"></label>
+              <label>Bezahlt von
+                <select name="paid_by">
+                  <option>Hofer Maximilian</option>
+                  <option>Jana March</option>
+                </select>
+              </label>
+              <label>Split für aktuellen Nutzer
+                <select name="split_percent">
+                  <option value="100">100 %</option>
+                  <option value="50" selected>50 %</option>
+                  <option value="0">0 %</option>
+                </select>
+              </label>
+              <label>Sichtbar für anderen Nutzer?
+                <select name="visible_to_other">
+                  <option value="ja">ja</option>
+                  <option value="nein">nein</option>
+                </select>
+              </label>
+              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+              <div class="full actions-row">
+                <button class="btn btn-primary" type="submit" id="fixedCostSubmitBtn">Fixkosten speichern</button>
+                <button class="btn btn-ghost" type="button" id="fixedCostCancelEditBtn" style="display:none;">Bearbeitung abbrechen</button>
+              </div>
+            </form>
+            <table class="data-table" id="fixedCostsTable">
+              <thead>
+                <tr><th>Titel</th><th>Betrag</th><th>Frequenz</th><th>Aktion</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h2>Einnahmen</h2>
+                <p id="incomeFormModeLabel">Neue Einnahme</p>
+              </div>
+            </div>
+            <form id="incomeForm" class="form-grid compact-form">
+              <input type="hidden" name="id" />
+              <label>Datum<input type="date" name="date" required></label>
+              <label>Einnahmentyp
+                <select name="income_type">
+                  <option>Gehalt</option>
+                  <option>Aktien</option>
+                  <option>Verschiedenes</option>
+                  <option>Gutschrift</option>
+                </select>
+              </label>
+              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+              <div class="full actions-row">
+                <button class="btn btn-primary" type="submit" id="incomeSubmitBtn">Einnahme speichern</button>
+                <button class="btn btn-ghost" type="button" id="incomeCancelEditBtn" style="display:none;">Bearbeitung abbrechen</button>
+              </div>
+            </form>
+            <table class="data-table" id="incomeTable">
+              <thead>
+                <tr><th>Datum</th><th>Typ</th><th>Betrag</th><th>Aktion</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
