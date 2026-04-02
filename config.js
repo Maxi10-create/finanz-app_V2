@@ -1,6 +1,6 @@
 const CONFIG = {
   API_BASE_URLS: [
-    'https://script.google.com/macros/s/AKfycbxVx2SWWT_H7-daSlsj5D0OEAUXVH7m-SzGwk2mX_zBw42FtTErVJ19MNV-ALjYXPIQqQ/exec'
+    'https://script.google.com/macros/s/AKfycbzS3lM-Z_8mKZ8Id0NrC0-820gB9gaW4ZBt4HSeu0KfLXwoHxrrI_yq9AWOIczGHe9U_Q/exec'
   ],
   USER_NAME: 'Hofer Maximilian',
   OTHER_PERSON: 'Jana March',
