@@ -54,7 +54,7 @@ function doPost(e) {
       return jsonResponse({ success: true });
     }
 
-    if (action === 'addingtransaction' || action === 'addtransaction') {
+    if (action === 'addtransaction') {
       payload.module = 'Haushalt';
       appendObject_(SHEETS.TRANSACTIONS, payload, [
         'id','date','month_key','module','title','main_category','sub_category','amount',
