@@ -326,9 +326,12 @@ function normalizeTransactionPayload_(payload, isUpdate) {
   }
 
   obj.updated_at = now;
-  if (obj.date && !obj.month_key) obj.month_key = normalizeMonthKey_(obj.date);
 
-  if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '50';
+  if (obj.date && !obj.month_key) {
+    obj.month_key = normalizeMonthKey_(obj.date);
+  }
+
+  if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
   if (obj.visible_to_other == null || obj.visible_to_other === '') obj.visible_to_other = 'ja';
   if (obj.payment_type == null) obj.payment_type = '';
   if (obj.status == null) obj.status = '';
@@ -365,8 +368,12 @@ function normalizeTripExpensePayload_(payload, isUpdate) {
   }
 
   obj.updated_at = now;
-  if (obj.date && !obj.month_key) obj.month_key = normalizeMonthKey_(obj.date);
-  if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '50';
+
+  if (obj.date && !obj.month_key) {
+    obj.month_key = normalizeMonthKey_(obj.date);
+  }
+
+  if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
   if (obj.status == null) obj.status = '';
   if (obj.note == null) obj.note = '';
   if (obj.is_deleted == null) obj.is_deleted = '';
@@ -400,7 +407,7 @@ function normalizeFixedCostPayload_(payload, isUpdate) {
   }
 
   obj.updated_at = now;
-  if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '50';
+  if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
   if (obj.visible_to_other == null || obj.visible_to_other === '') obj.visible_to_other = 'nein';
   if (obj.note == null) obj.note = '';
   if (obj.is_deleted == null) obj.is_deleted = '';
