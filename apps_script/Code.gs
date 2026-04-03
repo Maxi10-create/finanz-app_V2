@@ -1,4 +1,4 @@
-const API_VERSION = 'v4-2026-04-03-force-schema';
+const API_VERSION = 'v5-2026-04-03-split-enabled';
 
 const SHEETS = {
   INCOME: 'Income',
@@ -16,7 +16,7 @@ const SCHEMAS = {
   ],
   [SHEETS.TRANSACTIONS]: [
     'id','date','month_key','module','title','main_category','sub_category','amount',
-    'paid_by','split_percent','payment_type','status','note',
+    'paid_by','split_enabled','split_percent','payment_type','status','note',
     'created_at','updated_at','created_by','updated_by','owner_user','visible_to_other','is_deleted'
   ],
   [SHEETS.TRIPS]: [
@@ -26,7 +26,7 @@ const SCHEMAS = {
   ],
   [SHEETS.TRIP_EXPENSES]: [
     'id','trip_id','date','month_key','title','main_category','sub_category','amount',
-    'paid_by','split_percent','status','note',
+    'paid_by','split_enabled','split_percent','status','note',
     'created_at','updated_at','created_by','updated_by','owner_user','is_deleted'
   ],
   [SHEETS.CATEGORIES]: [
@@ -35,7 +35,7 @@ const SCHEMAS = {
   ],
   [SHEETS.FIXED_COSTS]: [
     'id','title','main_category','sub_category','amount','frequency','start_month','end_month',
-    'paid_by','split_percent','visible_to_other','note',
+    'paid_by','split_enabled','split_percent','visible_to_other','note',
     'created_at','updated_at','created_by','updated_by','owner_user','is_deleted'
   ]
 };
@@ -182,7 +182,7 @@ function getSpreadsheet_() {
   const propertyId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   if (propertyId) return SpreadsheetApp.openById(propertyId);
 
-  throw new Error('Kein gebundenes Spreadsheet gefunden. Bitte dieses Apps-Script direkt über Erweiterungen > Apps Script im Ziel-Sheet öffnen und deployen.');
+  throw new Error('Kein gebundenes Spreadsheet gefunden. Bitte dieses Apps-Script direkt ueber Erweiterungen > Apps Script im Ziel-Sheet oeffnen und deployen.');
 }
 
 function sanitizeHeaders_(rawHeaders) {
@@ -195,7 +195,7 @@ function forceSchema_(sheetName) {
   if (!sheet) throw new Error('Sheet fehlt: ' + sheetName);
 
   const schema = SCHEMAS[sheetName];
-  if (!schema) throw new Error('Kein Schema definiert für: ' + sheetName);
+  if (!schema) throw new Error('Kein Schema definiert fuer: ' + sheetName);
 
   const lastCol = Math.max(sheet.getLastColumn(), schema.length);
 
@@ -203,7 +203,7 @@ function forceSchema_(sheetName) {
     const extraHeaders = sheet.getRange(1, schema.length + 1, 1, lastCol - schema.length).getValues()[0];
     const hasDataRight = extraHeaders.some((v) => String(v || '').trim() !== '');
     if (hasDataRight) {
-      throw new Error('Rechts von der erwarteten Struktur existieren zusätzliche Header in ' + sheetName + '. Bitte diese Spalten löschen.');
+      throw new Error('Rechts von der erwarteten Struktur existieren zusaetzliche Header in ' + sheetName + '. Bitte diese Spalten loeschen.');
     }
   }
 
@@ -331,6 +331,7 @@ function normalizeTransactionPayload_(payload, isUpdate) {
     obj.month_key = normalizeMonthKey_(obj.date);
   }
 
+  if (obj.split_enabled == null || obj.split_enabled === '') obj.split_enabled = 'nein';
   if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
   if (obj.visible_to_other == null || obj.visible_to_other === '') obj.visible_to_other = 'ja';
   if (obj.payment_type == null) obj.payment_type = '';
@@ -373,6 +374,7 @@ function normalizeTripExpensePayload_(payload, isUpdate) {
     obj.month_key = normalizeMonthKey_(obj.date);
   }
 
+  if (obj.split_enabled == null || obj.split_enabled === '') obj.split_enabled = 'nein';
   if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
   if (obj.status == null) obj.status = '';
   if (obj.note == null) obj.note = '';
@@ -407,6 +409,7 @@ function normalizeFixedCostPayload_(payload, isUpdate) {
   }
 
   obj.updated_at = now;
+  if (obj.split_enabled == null || obj.split_enabled === '') obj.split_enabled = 'nein';
   if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
   if (obj.visible_to_other == null || obj.visible_to_other === '') obj.visible_to_other = 'nein';
   if (obj.note == null) obj.note = '';
