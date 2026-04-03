@@ -1,5 +1,6 @@
 (() => {
-  const DEFAULT_END_MONTH = "2026-12";
+  const MASTER_START_MONTH = "2026-01";
+  const DEFAULT_RANGE_MONTHS = 12;
 
   const state = {
     activeApiBaseUrl: null,
@@ -142,6 +143,10 @@
     return (els.chartMode?.value || "currency") === "percent";
   }
 
+  function selectedHighlightMonth() {
+    return els.filterEndMonth?.value || currentMonth();
+  }
+
   function showMessage(text, type = "error") {
     if (!els.messageBox) return;
     els.messageBox.innerHTML = `<div class="alert ${type}">${escapeHtml(text)}</div>`;
@@ -207,10 +212,10 @@
 
   function setDefaultMonth() {
     if (els.filterEndMonth && !els.filterEndMonth.value) {
-      els.filterEndMonth.value = DEFAULT_END_MONTH;
+      els.filterEndMonth.value = currentMonth();
     }
     if (els.rangeMonths && !els.rangeMonths.value) {
-      els.rangeMonths.value = "12";
+      els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -224,15 +229,14 @@
   }
 
   function monthRange() {
-    const end = els.filterEndMonth?.value || DEFAULT_END_MONTH;
-    const count = Number(els.rangeMonths?.value || 12);
+    const count = Number(els.rangeMonths?.value || DEFAULT_RANGE_MONTHS);
     const months = [];
 
-    const [year, month] = end.split("-").map(Number);
-    const cursor = new Date(year, month - 1, 1);
+    const [startYear, startMonth] = MASTER_START_MONTH.split("-").map(Number);
+    const startDate = new Date(startYear, startMonth - 1, 1);
 
-    for (let i = count - 1; i >= 0; i -= 1) {
-      const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+    for (let i = 0; i < count; i += 1) {
+      const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     }
 
@@ -339,7 +343,7 @@
   }
 
   function filteredTransactions() {
-    const month = els.filterEndMonth?.value || DEFAULT_END_MONTH;
+    const month = selectedHighlightMonth();
     return filteredTransactionsForMonth(month);
   }
 
@@ -350,7 +354,7 @@
   }
 
   function filteredTripExpenses() {
-    const month = els.filterEndMonth?.value || DEFAULT_END_MONTH;
+    const month = selectedHighlightMonth();
     return filteredTripExpensesForMonth(month);
   }
 
@@ -562,7 +566,6 @@
     const variableRate = income ? (variableCosts / income) * 100 : 0;
     const peerBalance = calculatePeerBalance(txRows.concat(tripRows));
     const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
-    const topCategory = categoryAggregate.length ? categoryAggregate[0][0] : "—";
     const percentMode = isPercentMode();
 
     if (els.heroAvailable) {
@@ -609,7 +612,7 @@
       `).join("");
     }
 
-    return { income, txTotal, tripTotal, fixedCosts, totalExpenses, variableCosts, available, categoryAggregate, topCategory, peerBalance };
+    return { income, txTotal, tripTotal, fixedCosts, totalExpenses, variableCosts, available, categoryAggregate };
   }
 
   function chartOptions(stacked = false) {
@@ -630,6 +633,54 @@
           ticks: { color: "#aec1e6" },
           grid: { color: "rgba(255,255,255,.05)" }
         }
+      }
+    };
+  }
+
+  function createSelectedMonthHighlightPlugin(selectedMonth) {
+    return {
+      id: "selectedMonthHighlight",
+      beforeDatasetsDraw(chart) {
+        if (!selectedMonth) return;
+
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !scales?.x) return;
+
+        const labels = chart.data.labels || [];
+        const index = labels.indexOf(selectedMonth);
+        if (index === -1) return;
+
+        const xScale = scales.x;
+        const centerX = xScale.getPixelForValue(index);
+
+        let leftX = chartArea.left;
+        let rightX = chartArea.right;
+
+        if (labels.length === 1) {
+          leftX = chartArea.left;
+          rightX = chartArea.right;
+        } else {
+          const prevX = index > 0 ? xScale.getPixelForValue(index - 1) : null;
+          const nextX = index < labels.length - 1 ? xScale.getPixelForValue(index + 1) : null;
+
+          if (prevX != null && nextX != null) {
+            leftX = (prevX + centerX) / 2;
+            rightX = (centerX + nextX) / 2;
+          } else if (prevX != null) {
+            const half = (centerX - prevX) / 2;
+            leftX = centerX - half;
+            rightX = centerX + half;
+          } else if (nextX != null) {
+            const half = (nextX - centerX) / 2;
+            leftX = centerX - half;
+            rightX = centerX + half;
+          }
+        }
+
+        ctx.save();
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.fillRect(leftX, chartArea.top, rightX - leftX, chartArea.bottom - chartArea.top);
+        ctx.restore();
       }
     };
   }
@@ -673,10 +724,13 @@
           { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
         ];
 
+    const highlightMonth = selectedHighlightMonth();
+
     ensureChart("masterChart", "masterChart", {
       type: "line",
       data: { labels: months, datasets },
-      options: chartOptions()
+      options: chartOptions(),
+      plugins: [createSelectedMonthHighlightPlugin(highlightMonth)]
     });
 
     const fixedMonthRows = activeFixedCostsForMonth(month);
@@ -954,7 +1008,7 @@
   }
 
   function renderDashboard() {
-    const month = els.filterEndMonth?.value || DEFAULT_END_MONTH;
+    const month = selectedHighlightMonth();
     const txRows = filteredTransactions();
     const tripRows = filteredTripExpenses();
     const metrics = renderKpis(month, txRows, tripRows);
@@ -1033,6 +1087,7 @@
 
     Object.entries(record).forEach(([key, value]) => {
       if (key === "_clientKey") return;
+
       const field = form.elements.namedItem(key);
       if (!field) return;
       if (field instanceof RadioNodeList) return;
