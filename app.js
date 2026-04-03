@@ -51,12 +51,43 @@
     fixedMainCategory: document.getElementById("fixedMainCategory"),
     fixedSubCategory: document.getElementById("fixedSubCategory"),
     tripExpenseTripId: document.getElementById("tripExpenseTripId"),
+
     transactionForm: document.getElementById("transactionForm"),
     tripForm: document.getElementById("tripForm"),
     tripExpenseForm: document.getElementById("tripExpenseForm"),
     categoryForm: document.getElementById("categoryForm"),
     fixedCostForm: document.getElementById("fixedCostForm"),
-    incomeForm: document.getElementById("incomeForm")
+    incomeForm: document.getElementById("incomeForm"),
+
+    bookingFormModeLabel: document.getElementById("bookingFormModeLabel"),
+    tripFormModeLabel: document.getElementById("tripFormModeLabel"),
+    tripExpenseFormModeLabel: document.getElementById("tripExpenseFormModeLabel"),
+    categoryFormModeLabel: document.getElementById("categoryFormModeLabel"),
+    fixedCostFormModeLabel: document.getElementById("fixedCostFormModeLabel"),
+    incomeFormModeLabel: document.getElementById("incomeFormModeLabel"),
+
+    transactionSubmitBtn: document.getElementById("transactionSubmitBtn"),
+    tripSubmitBtn: document.getElementById("tripSubmitBtn"),
+    tripExpenseSubmitBtn: document.getElementById("tripExpenseSubmitBtn"),
+    categorySubmitBtn: document.getElementById("categorySubmitBtn"),
+    fixedCostSubmitBtn: document.getElementById("fixedCostSubmitBtn"),
+    incomeSubmitBtn: document.getElementById("incomeSubmitBtn"),
+
+    transactionCancelEditBtn: document.getElementById("transactionCancelEditBtn"),
+    tripCancelEditBtn: document.getElementById("tripCancelEditBtn"),
+    tripExpenseCancelEditBtn: document.getElementById("tripExpenseCancelEditBtn"),
+    categoryCancelEditBtn: document.getElementById("categoryCancelEditBtn"),
+    fixedCostCancelEditBtn: document.getElementById("fixedCostCancelEditBtn"),
+    incomeCancelEditBtn: document.getElementById("incomeCancelEditBtn")
+  };
+
+  const editState = {
+    transaction: null,
+    trip: null,
+    tripExpense: null,
+    category: null,
+    fixedCost: null,
+    income: null
   };
 
   const currency = (value) =>
@@ -104,9 +135,7 @@
 
   async function fetchJson(url, options = {}) {
     const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 
@@ -310,12 +339,10 @@
 
   function aggregateCategories(rows) {
     const map = new Map();
-
     rows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
       map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
     });
-
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
@@ -367,30 +394,15 @@
     populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory);
 
     els.bookingMainCategory?.addEventListener("change", () => {
-      populateCategorySelects(
-        "Haushalt",
-        els.bookingMainCategory,
-        els.bookingSubCategory,
-        els.bookingMainCategory.value
-      );
+      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, els.bookingMainCategory.value);
     });
 
     els.tripMainCategory?.addEventListener("change", () => {
-      populateCategorySelects(
-        "Urlaub",
-        els.tripMainCategory,
-        els.tripSubCategory,
-        els.tripMainCategory.value
-      );
+      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, els.tripMainCategory.value);
     });
 
     els.fixedMainCategory?.addEventListener("change", () => {
-      populateCategorySelects(
-        "Haushalt",
-        els.fixedMainCategory,
-        els.fixedSubCategory,
-        els.fixedMainCategory.value
-      );
+      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, els.fixedMainCategory.value);
     });
   }
 
@@ -398,7 +410,6 @@
     if (!els.tripExpenseTripId) return;
 
     const rows = (state.data.trips || []).filter(isVisibleTrip);
-
     els.tripExpenseTripId.innerHTML = rows
       .map((row) => `<option value="${escapeHtml(row.trip_id)}">${escapeHtml(row.title)} – ${escapeHtml(row.destination)}</option>`)
       .join("");
@@ -466,6 +477,15 @@
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
   }
 
+  function actionButtons(type, idField, idValue) {
+    return `
+      <div class="table-actions">
+        <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-id="${escapeHtml(idValue)}">Bearbeiten</button>
+        <button type="button" class="btn btn-ghost btn-xs js-delete" data-type="${escapeHtml(type)}" data-id="${escapeHtml(idValue)}">Löschen</button>
+      </div>
+    `;
+  }
+
   function renderKpis(month, txRows, tripRows) {
     const income = monthlyIncome(month);
     const txTotal = txRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -481,10 +501,7 @@
     const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
     const topCategory = categoryAggregate.length ? categoryAggregate[0][0] : "—";
 
-    if (els.heroAvailable) {
-      els.heroAvailable.textContent = currency(available);
-    }
-
+    if (els.heroAvailable) els.heroAvailable.textContent = currency(available);
     if (els.heroAvailableSub) {
       els.heroAvailableSub.textContent = available >= 0 ? "Positiver Monatsüberschuss" : "Monat aktuell negativ";
     }
@@ -502,13 +519,8 @@
     }
 
     const balanceTarget = els.heroPeerBalance || els.heroJanaBalance;
-    if (balanceTarget) {
-      balanceTarget.textContent = currency(peerBalance);
-    }
-
-    if (els.heroPeerLabel) {
-      els.heroPeerLabel.textContent = `Saldo ${otherUserName()}`;
-    }
+    if (balanceTarget) balanceTarget.textContent = currency(peerBalance);
+    if (els.heroPeerLabel) els.heroPeerLabel.textContent = `Saldo ${otherUserName()}`;
 
     if (els.kpiGrid) {
       const items = [
@@ -567,22 +579,10 @@
     return {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          labels: { color: "#d8e4ff" }
-        }
-      },
+      plugins: { legend: { labels: { color: "#d8e4ff" } } },
       scales: {
-        x: {
-          stacked,
-          ticks: { color: "#aec1e6" },
-          grid: { color: "rgba(255,255,255,.05)" }
-        },
-        y: {
-          stacked,
-          ticks: { color: "#aec1e6" },
-          grid: { color: "rgba(255,255,255,.05)" }
-        }
+        x: { stacked, ticks: { color: "#aec1e6" }, grid: { color: "rgba(255,255,255,.05)" } },
+        y: { stacked, ticks: { color: "#aec1e6" }, grid: { color: "rgba(255,255,255,.05)" } }
       }
     };
   }
@@ -591,26 +591,14 @@
     return {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: {
-            color: "#d8e4ff",
-            boxWidth: 14
-          }
-        }
-      }
+      plugins: { legend: { position: "bottom", labels: { color: "#d8e4ff", boxWidth: 14 } } }
     };
   }
 
   function ensureChart(name, canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === "undefined") return;
-
-    if (state.charts[name]) {
-      state.charts[name].destroy();
-    }
-
+    if (state.charts[name]) state.charts[name].destroy();
     state.charts[name] = new Chart(canvas, config);
   }
 
@@ -697,7 +685,6 @@
 
   function renderTransactionsTable() {
     if (!els.transactionsTableBody) return;
-
     const rows = getTransactionsForTable();
 
     els.transactionsTableBody.innerHTML = rows.length
@@ -708,7 +695,7 @@
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
             <td>${escapeHtml(row.paid_by)}</td>
-            <td>${escapeHtml(row.owner_user || "")}</td>
+            <td>${actionButtons("transaction", "id", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="6" class="table-empty">Noch keine Haushaltsbuchungen vorhanden</td></tr>';
@@ -716,7 +703,6 @@
 
   function renderTripsTable() {
     if (!els.tripsTableBody) return;
-
     const rows = getTripsForTable();
 
     els.tripsTableBody.innerHTML = rows.length
@@ -726,7 +712,7 @@
             <td>${escapeHtml(row.destination)}</td>
             <td>${escapeHtml(`${normalizeDateOnly(row.start_date)} – ${normalizeDateOnly(row.end_date)}`)}</td>
             <td>${escapeHtml(currency(row.planned_budget))}</td>
-            <td>${escapeHtml(row.status)}</td>
+            <td>${actionButtons("trip", "trip_id", row.trip_id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Reisen vorhanden</td></tr>';
@@ -734,7 +720,6 @@
 
   function renderTripExpensesTable() {
     if (!els.tripExpensesTableBody) return;
-
     const tripMap = new Map((state.data.trips || []).map((row) => [row.trip_id, row.title]));
     const rows = getTripExpensesForTable();
 
@@ -745,7 +730,7 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
-            <td>${escapeHtml(row.paid_by)}</td>
+            <td>${actionButtons("tripExpense", "id", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
@@ -753,7 +738,6 @@
 
   function renderCategoriesTable() {
     if (!els.categoriesTableBody) return;
-
     const rows = getAllVisibleCategoriesForTable();
 
     els.categoriesTableBody.innerHTML = rows.length
@@ -762,14 +746,14 @@
             <td>${escapeHtml(row.module)}</td>
             <td>${escapeHtml(row.main_category)}</td>
             <td>${escapeHtml(row.sub_category)}</td>
+            <td>${actionButtons("category", "id", row.id)}</td>
           </tr>
         `).join("")
-      : '<tr><td colspan="3" class="table-empty">Noch keine Kategorien vorhanden</td></tr>';
+      : '<tr><td colspan="4" class="table-empty">Noch keine Kategorien vorhanden</td></tr>';
   }
 
   function renderFixedCostsTable() {
     if (!els.fixedCostsTableBody) return;
-
     const rows = getAllVisibleFixedCostsForTable();
 
     els.fixedCostsTableBody.innerHTML = rows.length
@@ -778,7 +762,7 @@
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
             <td>${escapeHtml(row.frequency)}</td>
-            <td>${escapeHtml(row.visible_to_other || "")}</td>
+            <td>${actionButtons("fixedCost", "id", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Fixkosten vorhanden</td></tr>';
@@ -786,7 +770,6 @@
 
   function renderIncomeTable() {
     if (!els.incomeTableBody) return;
-
     const rows = getIncomeForTable();
 
     els.incomeTableBody.innerHTML = rows.length
@@ -795,9 +778,10 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.income_type)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
+            <td>${actionButtons("income", "id", row.id)}</td>
           </tr>
         `).join("")
-      : '<tr><td colspan="3" class="table-empty">Noch keine Einnahmen vorhanden</td></tr>';
+      : '<tr><td colspan="4" class="table-empty">Noch keine Einnahmen vorhanden</td></tr>';
   }
 
   function renderDashboard() {
@@ -828,9 +812,7 @@
     clearMessage();
 
     try {
-      if (els.syncStatus) {
-        els.syncStatus.textContent = "Synchronisierung läuft...";
-      }
+      if (els.syncStatus) els.syncStatus.textContent = "Synchronisierung läuft...";
 
       const result = await apiGet("getAll");
       state.data = result.data || {
@@ -850,10 +832,243 @@
 
       showMessage("Daten erfolgreich geladen.", "success");
     } catch (error) {
-      if (els.syncStatus) {
-        els.syncStatus.textContent = "Synchronisierung fehlgeschlagen";
-      }
+      if (els.syncStatus) els.syncStatus.textContent = "Synchronisierung fehlgeschlagen";
       showMessage(error.message || "Fehler beim Laden.", "error");
+      console.error(error);
+    }
+  }
+
+  function formToObject(form) {
+    const data = Object.fromEntries(new FormData(form).entries());
+    const user = currentUser();
+
+    if (data.date && !data.month_key) data.month_key = data.date.slice(0, 7);
+
+    if (user) {
+      data.created_by = user.displayName;
+      data.updated_by = user.displayName;
+      data.owner_user = user.displayName;
+    }
+
+    return data;
+  }
+
+  function setFormValues(form, record) {
+    if (!form || !record) return;
+    Object.entries(record).forEach(([key, value]) => {
+      const field = form.elements.namedItem(key);
+      if (!field) return;
+
+      if (field instanceof RadioNodeList) return;
+
+      if (field.tagName === "INPUT" && field.type === "date") {
+        field.value = normalizeDateOnly(value);
+      } else if (field.tagName === "INPUT" && field.type === "month") {
+        field.value = monthFromDate(value);
+      } else {
+        field.value = value ?? "";
+      }
+    });
+  }
+
+  function resetFormUi(type) {
+    if (type === "transaction") {
+      editState.transaction = null;
+      els.transactionForm?.reset();
+      setDefaultMonth();
+      if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
+      if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
+      if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "none";
+      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory);
+      return;
+    }
+
+    if (type === "trip") {
+      editState.trip = null;
+      els.tripForm?.reset();
+      if (els.tripFormModeLabel) els.tripFormModeLabel.textContent = "Neue Reise";
+      if (els.tripSubmitBtn) els.tripSubmitBtn.textContent = "Reise speichern";
+      if (els.tripCancelEditBtn) els.tripCancelEditBtn.style.display = "none";
+      return;
+    }
+
+    if (type === "tripExpense") {
+      editState.tripExpense = null;
+      els.tripExpenseForm?.reset();
+      setDefaultMonth();
+      if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Neue Urlaubsausgabe";
+      if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Urlaubsausgabe speichern";
+      if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "none";
+      populateTripSelect();
+      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory);
+      return;
+    }
+
+    if (type === "category") {
+      editState.category = null;
+      els.categoryForm?.reset();
+      if (els.categoryFormModeLabel) els.categoryFormModeLabel.textContent = "Neue Kategorie";
+      if (els.categorySubmitBtn) els.categorySubmitBtn.textContent = "Kategorie speichern";
+      if (els.categoryCancelEditBtn) els.categoryCancelEditBtn.style.display = "none";
+      return;
+    }
+
+    if (type === "fixedCost") {
+      editState.fixedCost = null;
+      els.fixedCostForm?.reset();
+      if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Neue Fixkostenposition";
+      if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Fixkosten speichern";
+      if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "none";
+      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory);
+      return;
+    }
+
+    if (type === "income") {
+      editState.income = null;
+      els.incomeForm?.reset();
+      setDefaultMonth();
+      if (els.incomeFormModeLabel) els.incomeFormModeLabel.textContent = "Neue Einnahme";
+      if (els.incomeSubmitBtn) els.incomeSubmitBtn.textContent = "Einnahme speichern";
+      if (els.incomeCancelEditBtn) els.incomeCancelEditBtn.style.display = "none";
+    }
+  }
+
+  function startEdit(type, record) {
+    if (!record) return;
+
+    if (type === "transaction") {
+      editState.transaction = record.id;
+      setFormValues(els.transactionForm, record);
+      if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Buchung bearbeiten";
+      if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Änderungen speichern";
+      if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "inline-flex";
+      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, record.main_category, record.sub_category);
+      document.getElementById("panel-bookings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (type === "trip") {
+      editState.trip = record.trip_id;
+      setFormValues(els.tripForm, record);
+      if (els.tripFormModeLabel) els.tripFormModeLabel.textContent = "Reise bearbeiten";
+      if (els.tripSubmitBtn) els.tripSubmitBtn.textContent = "Änderungen speichern";
+      if (els.tripCancelEditBtn) els.tripCancelEditBtn.style.display = "inline-flex";
+      document.getElementById("panel-urlaub")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (type === "tripExpense") {
+      editState.tripExpense = record.id;
+      setFormValues(els.tripExpenseForm, record);
+      if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Urlaubsausgabe bearbeiten";
+      if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Änderungen speichern";
+      if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "inline-flex";
+      populateTripSelect();
+      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, record.main_category, record.sub_category);
+      document.getElementById("panel-urlaub")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (type === "category") {
+      editState.category = record.id;
+      setFormValues(els.categoryForm, record);
+      if (els.categoryFormModeLabel) els.categoryFormModeLabel.textContent = "Kategorie bearbeiten";
+      if (els.categorySubmitBtn) els.categorySubmitBtn.textContent = "Änderungen speichern";
+      if (els.categoryCancelEditBtn) els.categoryCancelEditBtn.style.display = "inline-flex";
+      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (type === "fixedCost") {
+      editState.fixedCost = record.id;
+      setFormValues(els.fixedCostForm, record);
+      if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Fixkosten bearbeiten";
+      if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Änderungen speichern";
+      if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "inline-flex";
+      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, record.main_category, record.sub_category);
+      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (type === "income") {
+      editState.income = record.id;
+      setFormValues(els.incomeForm, record);
+      if (els.incomeFormModeLabel) els.incomeFormModeLabel.textContent = "Einnahme bearbeiten";
+      if (els.incomeSubmitBtn) els.incomeSubmitBtn.textContent = "Änderungen speichern";
+      if (els.incomeCancelEditBtn) els.incomeCancelEditBtn.style.display = "inline-flex";
+      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function getRecordByTypeAndId(type, id) {
+    if (type === "transaction") {
+      return (state.data.transactions || []).find((r) => String(r.id) === String(id));
+    }
+    if (type === "trip") {
+      return (state.data.trips || []).find((r) => String(r.trip_id) === String(id));
+    }
+    if (type === "tripExpense") {
+      return (state.data.tripExpenses || []).find((r) => String(r.id) === String(id));
+    }
+    if (type === "category") {
+      return (state.data.categories || []).find((r) => String(r.id) === String(id));
+    }
+    if (type === "fixedCost") {
+      return (state.data.fixedCosts || []).find((r) => String(r.id) === String(id));
+    }
+    if (type === "income") {
+      return (state.data.income || []).find((r) => String(r.id) === String(id));
+    }
+    return null;
+  }
+
+  async function deleteRecord(type, id) {
+    const confirmed = window.confirm("Diesen Eintrag wirklich löschen?");
+    if (!confirmed) return;
+
+    const actionMap = {
+      transaction: "deleteTransaction",
+      trip: "deleteTrip",
+      tripExpense: "deleteTripExpense",
+      category: "deleteCategory",
+      fixedCost: "deleteFixedCost",
+      income: "deleteIncome"
+    };
+
+    const payload = {};
+    if (type === "trip") {
+      payload.trip_id = id;
+    } else {
+      payload.id = id;
+    }
+
+    await apiPost(actionMap[type], payload);
+    resetFormUi(type);
+    await loadAll();
+    showMessage("Eintrag gelöscht.", "success");
+  }
+
+  async function submitForm(form, addAction, updateAction, successAddText, successUpdateText, type) {
+    try {
+      clearMessage();
+      const data = formToObject(form);
+
+      const isEdit =
+        (type === "trip" && !!editState.trip) ||
+        (type === "transaction" && !!editState.transaction) ||
+        (type === "tripExpense" && !!editState.tripExpense) ||
+        (type === "category" && !!editState.category) ||
+        (type === "fixedCost" && !!editState.fixedCost) ||
+        (type === "income" && !!editState.income);
+
+      const action = isEdit ? updateAction : addAction;
+
+      await apiPost(action, data);
+      resetFormUi(type);
+      await loadAll();
+      showMessage(isEdit ? successUpdateText : successAddText, "success");
+    } catch (error) {
+      showMessage(error.message || "Speichern fehlgeschlagen.", "error");
       console.error(error);
     }
   }
@@ -867,57 +1082,117 @@
     }
 
     if (user) {
-      data.created_by = user.displayName;
+      if (!data.created_by) data.created_by = user.displayName;
       data.updated_by = user.displayName;
-      data.owner_user = user.displayName;
+      if (!data.owner_user) data.owner_user = user.displayName;
     }
 
     return data;
   }
 
-  async function submitForm(form, action, successText) {
-    try {
-      clearMessage();
-      await apiPost(action, formToObject(form));
-      form.reset();
-      setDefaultMonth();
-      await loadAll();
-      showMessage(successText, "success");
-    } catch (error) {
-      showMessage(error.message || "Speichern fehlgeschlagen.", "error");
-      console.error(error);
-    }
-  }
-
   function bindForms() {
     els.transactionForm?.addEventListener("submit", (event) => {
       event.preventDefault();
-      submitForm(els.transactionForm, "addTransaction", "Haushaltsbuchung gespeichert.");
+      submitForm(
+        els.transactionForm,
+        "addTransaction",
+        "updateTransaction",
+        "Haushaltsbuchung gespeichert.",
+        "Haushaltsbuchung aktualisiert.",
+        "transaction"
+      );
     });
 
     els.tripForm?.addEventListener("submit", (event) => {
       event.preventDefault();
-      submitForm(els.tripForm, "addTrip", "Reise gespeichert.");
+      submitForm(
+        els.tripForm,
+        "addTrip",
+        "updateTrip",
+        "Reise gespeichert.",
+        "Reise aktualisiert.",
+        "trip"
+      );
     });
 
     els.tripExpenseForm?.addEventListener("submit", (event) => {
       event.preventDefault();
-      submitForm(els.tripExpenseForm, "addTripExpense", "Urlaubsausgabe gespeichert.");
+      submitForm(
+        els.tripExpenseForm,
+        "addTripExpense",
+        "updateTripExpense",
+        "Urlaubsausgabe gespeichert.",
+        "Urlaubsausgabe aktualisiert.",
+        "tripExpense"
+      );
     });
 
     els.categoryForm?.addEventListener("submit", (event) => {
       event.preventDefault();
-      submitForm(els.categoryForm, "addCategory", "Kategorie gespeichert.");
+      submitForm(
+        els.categoryForm,
+        "addCategory",
+        "updateCategory",
+        "Kategorie gespeichert.",
+        "Kategorie aktualisiert.",
+        "category"
+      );
     });
 
     els.fixedCostForm?.addEventListener("submit", (event) => {
       event.preventDefault();
-      submitForm(els.fixedCostForm, "addFixedCost", "Fixkosten gespeichert.");
+      submitForm(
+        els.fixedCostForm,
+        "addFixedCost",
+        "updateFixedCost",
+        "Fixkosten gespeichert.",
+        "Fixkosten aktualisiert.",
+        "fixedCost"
+      );
     });
 
     els.incomeForm?.addEventListener("submit", (event) => {
       event.preventDefault();
-      submitForm(els.incomeForm, "addIncome", "Einnahme gespeichert.");
+      submitForm(
+        els.incomeForm,
+        "addIncome",
+        "updateIncome",
+        "Einnahme gespeichert.",
+        "Einnahme aktualisiert.",
+        "income"
+      );
+    });
+
+    els.transactionCancelEditBtn?.addEventListener("click", () => resetFormUi("transaction"));
+    els.tripCancelEditBtn?.addEventListener("click", () => resetFormUi("trip"));
+    els.tripExpenseCancelEditBtn?.addEventListener("click", () => resetFormUi("tripExpense"));
+    els.categoryCancelEditBtn?.addEventListener("click", () => resetFormUi("category"));
+    els.fixedCostCancelEditBtn?.addEventListener("click", () => resetFormUi("fixedCost"));
+    els.incomeCancelEditBtn?.addEventListener("click", () => resetFormUi("income"));
+  }
+
+  function bindTableActions() {
+    document.addEventListener("click", async (event) => {
+      const editBtn = event.target.closest(".js-edit");
+      if (editBtn) {
+        const type = editBtn.dataset.type;
+        const id = editBtn.dataset.id;
+        const record = getRecordByTypeAndId(type, id);
+        startEdit(type, record);
+        return;
+      }
+
+      const deleteBtn = event.target.closest(".js-delete");
+      if (deleteBtn) {
+        const type = deleteBtn.dataset.type;
+        const id = deleteBtn.dataset.id;
+        try {
+          await deleteRecord(type, id);
+        } catch (error) {
+          showMessage(error.message || "Löschen fehlgeschlagen.", "error");
+          console.error(error);
+        }
+      }
     });
   }
 
@@ -943,19 +1218,15 @@
       els.rangeMonths,
       els.chartMode,
       els.compositionMode
-    ]
-      .filter(Boolean)
-      .forEach((element) => {
-        element.addEventListener("change", renderAll);
-      });
+    ].filter(Boolean).forEach((element) => {
+      element.addEventListener("change", renderAll);
+    });
 
     els.reloadBtn?.addEventListener("click", loadAll);
 
     els.fixedModeBtn?.addEventListener("click", () => {
-      state.fixedCostDisplayMode =
-        state.fixedCostDisplayMode === "currency" ? "percent" : "currency";
-      els.fixedModeBtn.textContent =
-        state.fixedCostDisplayMode === "currency" ? "€ anzeigen" : "% anzeigen";
+      state.fixedCostDisplayMode = state.fixedCostDisplayMode === "currency" ? "percent" : "currency";
+      els.fixedModeBtn.textContent = state.fixedCostDisplayMode === "currency" ? "€ anzeigen" : "% anzeigen";
       renderDashboard();
     });
   }
@@ -967,6 +1238,7 @@
     bindTabs();
     bindForms();
     bindFilters();
+    bindTableActions();
     wireCategorySelects();
 
     state.initializedUi = true;
