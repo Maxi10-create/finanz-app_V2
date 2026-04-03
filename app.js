@@ -244,10 +244,13 @@
     const user = currentUserName();
     if ((row.owner_user || "") === user) return true;
 
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+    if (!splitEnabled) return false;
+
     const mainCategory = String(row.main_category || "");
     if (mainCategory === "Wohnen" || mainCategory === "Alltag") return true;
 
-    return false;
+    return String(row.visible_to_other || "").toLowerCase() === "ja";
   }
 
   function isVisibleTrip(row) {
@@ -267,6 +270,10 @@
 
     const user = currentUserName();
     if ((row.owner_user || "") === user) return true;
+
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+    if (!splitEnabled) return false;
+
     return String(row.visible_to_other || "").toLowerCase() === "ja";
   }
 
@@ -285,12 +292,7 @@
     const otherShare = amount - ownerShare;
 
     if (owner === me) return ownerShare;
-
-    if (String(row.visible_to_other || "").toLowerCase() === "ja" || !("visible_to_other" in row)) {
-      return otherShare;
-    }
-
-    return 0;
+    return otherShare;
   }
 
   function getCurrentUserAmount(row) {
@@ -574,6 +576,7 @@
     const savingsRate = income ? (available / income) * 100 : 0;
     const fixedRate = income ? (fixedCosts / income) * 100 : 0;
     const expenseRate = income ? (totalExpenses / income) * 100 : 0;
+    const variableRate = income ? (variableCosts / income) * 100 : 0;
     const peerBalance = calculatePeerBalance(txRows.concat(tripRows));
     const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
     const topCategory = categoryAggregate.length ? categoryAggregate[0][0] : "—";
@@ -604,8 +607,8 @@
         ? [
             ["Einnahmen", currency(income), "Monatliche Einnahmen"],
             ["Ausgaben gesamt", percent(expenseRate), "Haushalt + Urlaub + Fixkosten"],
-            ["Fixkostenquote", percent(fixedRate), "Monatliche Fixkosten zum Einkommen"],
-            ["Variable Kosten", percent(toPercent(variableCosts, income)), "Variable Kosten zum Einkommen"],
+            ["Fixkosten", percent(fixedRate), "Fixkostenquote"],
+            ["Variable Kosten", percent(variableRate), "Variable Kostenquote"],
             ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
           ]
         : [
@@ -1329,7 +1332,6 @@
   async function submitForm(form, addAction, updateAction, successAddText, successUpdateText, type) {
     try {
       clearMessage();
-      console.log("submitForm", { action: addAction, type, formData: Object.fromEntries(new FormData(form).entries()) });
 
       const data = formToObject(form);
 
@@ -1344,7 +1346,6 @@
       const action = isEdit ? updateAction : addAction;
 
       await apiPost(action, data);
-      console.log("submit ok");
 
       resetFormUi(type);
       await loadAll();
