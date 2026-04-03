@@ -45,54 +45,39 @@
       </nav>
 
       <section class="side-card">
-        <h3>Zeitraum & Filter</h3>
-        
+        <h3>Zeitraum &amp; Filter</h3>
+
         <label>
           Startmonat
           <input type="month" id="filterStartMonth" />
         </label>
-        
+
         <label>
           Analysemonat
           <input type="month" id="filterAnalysisMonth" />
         </label>
 
         <label>
-          Tagesfilter Buchungen
-          <input type="date" id="filterDay" />
-        </label>
-
-        <label>
           Zeitraum (Monate)
           <select id="rangeMonths">
-            <option value="3">3</option>
-            <option value="6">6</option>
             <option value="12" selected>12</option>
             <option value="24">24</option>
             <option value="36">36</option>
-          </select>
-        </label>
-
-        <label>
-          Person
-          <select id="filterPerson">
-            <option value="">Alle</option>
-            <option value="Hofer Maximilian">Hofer Maximilian</option>
-            <option value="Jana March">Jana March</option>
+            <option value="72">72</option>
           </select>
         </label>
 
         <label>
           Kategorie-Detail
           <select id="filterMainCategory">
-            <option value="">Alle</option>
+            <option value="">Alle Hauptkategorien</option>
           </select>
         </label>
 
         <label>
           Kostenanzeige
           <select id="chartMode">
-            <option value="currency" selected>€</option>
+            <option value="currency">€</option>
             <option value="percent">% vom Einkommen</option>
           </select>
         </label>
@@ -129,7 +114,7 @@
       <section class="panel active" id="panel-dashboard">
         <div class="hero-grid">
           <div class="hero-card gradient-card">
-            <div class="hero-label">Verfügbar im Endmonat</div>
+            <div class="hero-label">Verfügbar im Analysemonat</div>
             <div class="hero-value" id="heroAvailable">0,00 €</div>
             <div class="hero-sub" id="heroAvailableSub">Einnahmen minus Kosten</div>
           </div>
@@ -137,7 +122,7 @@
           <div class="hero-card">
             <div class="hero-label">Fixkosten</div>
             <div class="hero-value" id="heroFixedCosts">0,00 €</div>
-            <div class="hero-sub" id="heroFixedCostsSub">Aktueller Monat</div>
+            <div class="hero-sub" id="heroFixedCostsSub">Analysemonat</div>
           </div>
 
           <div class="hero-card">
@@ -153,12 +138,10 @@
           <div class="card-header">
             <div>
               <h2>Master Chart</h2>
-              <p>Einkommen, totale Kosten, Fixkosten und variable Kosten über Zeit</p>
+              <p>Startet ab dem gewählten Startmonat. Der Analysemonat wird hervorgehoben.</p>
             </div>
           </div>
-          <div class="chart-wrap">
-            <canvas id="masterChart"></canvas>
-          </div>
+          <canvas id="masterChart"></canvas>
         </section>
 
         <div class="chart-grid">
@@ -166,24 +149,20 @@
             <div class="card-header">
               <div>
                 <h2>Fixkosten-Zusammensetzung</h2>
-                <p id="fixedCompositionLabel">Aktueller Monat</p>
+                <p id="fixedCompositionLabel">Analysemonat</p>
               </div>
             </div>
-            <div class="chart-wrap chart-wrap-medium">
-              <canvas id="fixedCompositionChart"></canvas>
-            </div>
+            <canvas id="fixedCompositionChart"></canvas>
           </section>
 
           <section class="card">
             <div class="card-header">
               <div>
                 <h2>Variable Kosten-Zusammensetzung</h2>
-                <p id="variableCompositionLabel">Aktueller Monat</p>
+                <p id="variableCompositionLabel">Analysemonat</p>
               </div>
             </div>
-            <div class="chart-wrap chart-wrap-medium">
-              <canvas id="variableCompositionChart"></canvas>
-            </div>
+            <canvas id="variableCompositionChart"></canvas>
           </section>
         </div>
 
@@ -191,27 +170,22 @@
           <div class="card-header">
             <div>
               <h2>Kostenaufteilung pro Kategorie</h2>
-              <p>Nach Hauptkategorie auswählbar</p>
+              <p>Bei Auswahl einer Hauptkategorie werden die Unterkategorien angezeigt</p>
             </div>
           </div>
-          <div class="chart-wrap chart-wrap-medium">
-            <canvas id="categoryBreakdownChart"></canvas>
-          </div>
+          <canvas id="categoryBreakdownChart"></canvas>
         </section>
 
         <div class="table-grid">
           <section class="card">
             <div class="card-header">
               <div>
-                <h2>Überblick Endmonat</h2>
+                <h2>Überblick Analysemonat</h2>
               </div>
             </div>
             <table class="data-table" id="monthOverviewTable">
               <thead>
-                <tr>
-                  <th>Kennzahl</th>
-                  <th>Wert</th>
-                </tr>
+                <tr><th>Kennzahl</th><th>Wert</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -225,10 +199,7 @@
             </div>
             <table class="data-table" id="rangeOverviewTable">
               <thead>
-                <tr>
-                  <th>Kennzahl</th>
-                  <th>Wert</th>
-                </tr>
+                <tr><th>Kennzahl</th><th>Wert</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -238,34 +209,21 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h2>Hauptkategorien Monat vs. Zeitraum</h2>
+              <h2>Hauptkategorien Analysemonat vs. Zeitraum</h2>
             </div>
           </div>
           <table class="data-table" id="categoryCompareTable">
             <thead>
-              <tr>
-                <th>Hauptkategorie</th>
-                <th>Monat</th>
-                <th>Zeitraum</th>
-              </tr>
+              <tr><th>Hauptkategorie</th><th>Analysemonat</th><th>Zeitraum</th></tr>
             </thead>
             <tbody></tbody>
           </table>
         </section>
 
-        <section class="card">
-          <div class="card-header">
-            <div>
-              <h2>Kategorien Überblick</h2>
-            </div>
-          </div>
+        <section class="card" style="display:none;">
           <table class="data-table" id="categoryTable">
             <thead>
-              <tr>
-                <th>Kategorie</th>
-                <th>Betrag</th>
-                <th>Anteil</th>
-              </tr>
+              <tr><th>Kategorie</th><th>Betrag</th><th>Anteil</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -281,46 +239,42 @@
                 <p id="bookingFormModeLabel">Neue Buchung</p>
               </div>
             </div>
-
             <form id="transactionForm" class="form-grid">
               <input type="hidden" name="id" />
-              <input type="hidden" name="visible_to_other" value="ja" />
 
-              <label>Datum
-                <input type="date" name="date" required>
-              </label>
+              <label>Datum<input type="date" name="date" required></label>
+              <label>Beschreibung<input type="text" name="title" required></label>
 
-              <label>Beschreibung
-                <input type="text" name="title" required>
-              </label>
-
-              <label>Hauptkategorie
+              <label>
+                Hauptkategorie
                 <select name="main_category" id="bookingMainCategory" required></select>
               </label>
 
-              <label>Unterkategorie
+              <label>
+                Unterkategorie
                 <select name="sub_category" id="bookingSubCategory" required></select>
               </label>
 
-              <label>Betrag (€)
-                <input type="number" name="amount" step="0.01" required>
-              </label>
+              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
 
-              <label>Bezahlt von
+              <label>
+                Bezahlt von
                 <select name="paid_by" required>
                   <option>Hofer Maximilian</option>
                   <option>Jana March</option>
                 </select>
               </label>
 
-              <label>Split aktiv
+              <label>
+                Split aktiv?
                 <select name="split_enabled">
                   <option value="nein" selected>nein</option>
                   <option value="ja">ja</option>
                 </select>
               </label>
 
-              <label>Dein Anteil
+              <label>
+                Anteil Eigentümer
                 <select name="split_percent">
                   <option value="100" selected>100 %</option>
                   <option value="90">90 %</option>
@@ -336,15 +290,8 @@
                 </select>
               </label>
 
-              <label>Zahlungsart
-                <select name="payment_type">
-                  <option value="einmalig">einmalig</option>
-                  <option value="monatlich">monatlich</option>
-                  <option value="Abo">Abo</option>
-                </select>
-              </label>
-
-              <label>Status
+              <label>
+                Status
                 <select name="status">
                   <option>bezahlt</option>
                   <option>offen</option>
@@ -352,9 +299,7 @@
                 </select>
               </label>
 
-              <label class="full">Notiz
-                <textarea name="note" rows="3"></textarea>
-              </label>
+              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
 
               <div class="full actions-row">
                 <button class="btn btn-primary" type="submit" id="transactionSubmitBtn">Buchung speichern</button>
@@ -367,9 +312,9 @@
             <div class="card-header">
               <div>
                 <h2>Haushaltsbuchungen</h2>
+                <p>Es werden standardmäßig die letzten 10 Buchungen angezeigt</p>
               </div>
             </div>
-
             <table class="data-table" id="transactionsTable">
               <thead>
                 <tr>
@@ -397,31 +342,17 @@
                   <p id="tripFormModeLabel">Neue Reise</p>
                 </div>
               </div>
-
               <form id="tripForm" class="form-grid">
                 <input type="hidden" name="trip_id" />
 
-                <label>Titel
-                  <input type="text" name="title" required>
-                </label>
+                <label>Titel<input type="text" name="title" required></label>
+                <label>Destination<input type="text" name="destination" required></label>
+                <label>Von<input type="date" name="start_date" required></label>
+                <label>Bis<input type="date" name="end_date" required></label>
+                <label>Geplantes Budget (€)<input type="number" name="planned_budget" step="0.01"></label>
 
-                <label>Destination
-                  <input type="text" name="destination" required>
-                </label>
-
-                <label>Von
-                  <input type="date" name="start_date" required>
-                </label>
-
-                <label>Bis
-                  <input type="date" name="end_date" required>
-                </label>
-
-                <label>Geplantes Budget (€)
-                  <input type="number" name="planned_budget" step="0.01">
-                </label>
-
-                <label>Status
+                <label>
+                  Status
                   <select name="status">
                     <option>Idee</option>
                     <option>geplant</option>
@@ -430,7 +361,8 @@
                   </select>
                 </label>
 
-                <label>Mit
+                <label>
+                  Mit
                   <select name="travel_with">
                     <option>Jana March</option>
                     <option>allein</option>
@@ -438,9 +370,7 @@
                   </select>
                 </label>
 
-                <label class="full">Beschreibung
-                  <textarea name="description" rows="3"></textarea>
-                </label>
+                <label class="full">Beschreibung<textarea name="description" rows="3"></textarea></label>
 
                 <div class="full actions-row">
                   <button class="btn btn-primary" type="submit" id="tripSubmitBtn">Reise speichern</button>
@@ -456,49 +386,47 @@
                   <p id="tripExpenseFormModeLabel">Neue Urlaubsausgabe</p>
                 </div>
               </div>
-
               <form id="tripExpenseForm" class="form-grid">
                 <input type="hidden" name="id" />
 
-                <label>Reise
+                <label>
+                  Reise
                   <select name="trip_id" id="tripExpenseTripId" required></select>
                 </label>
 
-                <label>Datum
-                  <input type="date" name="date" required>
-                </label>
+                <label>Datum<input type="date" name="date" required></label>
+                <label>Beschreibung<input type="text" name="title" required></label>
 
-                <label>Beschreibung
-                  <input type="text" name="title" required>
-                </label>
-
-                <label>Hauptkategorie
+                <label>
+                  Hauptkategorie
                   <select name="main_category" id="tripMainCategory" required></select>
                 </label>
 
-                <label>Unterkategorie
+                <label>
+                  Unterkategorie
                   <select name="sub_category" id="tripSubCategory" required></select>
                 </label>
 
-                <label>Betrag (€)
-                  <input type="number" name="amount" step="0.01" required>
-                </label>
+                <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
 
-                <label>Bezahlt von
+                <label>
+                  Bezahlt von
                   <select name="paid_by" required>
                     <option>Hofer Maximilian</option>
                     <option>Jana March</option>
                   </select>
                 </label>
 
-                <label>Split aktiv
+                <label>
+                  Split aktiv?
                   <select name="split_enabled">
                     <option value="nein" selected>nein</option>
                     <option value="ja">ja</option>
                   </select>
                 </label>
 
-                <label>Dein Anteil
+                <label>
+                  Anteil Eigentümer
                   <select name="split_percent">
                     <option value="100" selected>100 %</option>
                     <option value="90">90 %</option>
@@ -514,7 +442,8 @@
                   </select>
                 </label>
 
-                <label>Status
+                <label>
+                  Status
                   <select name="status">
                     <option>bezahlt</option>
                     <option>gebucht</option>
@@ -522,9 +451,7 @@
                   </select>
                 </label>
 
-                <label class="full">Notiz
-                  <textarea name="note" rows="3"></textarea>
-                </label>
+                <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
 
                 <div class="full actions-row">
                   <button class="btn btn-primary" type="submit" id="tripExpenseSubmitBtn">Urlaubsausgabe speichern</button>
@@ -541,16 +468,9 @@
                   <h2>Reisen</h2>
                 </div>
               </div>
-
               <table class="data-table" id="tripsTable">
                 <thead>
-                  <tr>
-                    <th>Titel</th>
-                    <th>Ziel</th>
-                    <th>Zeitraum</th>
-                    <th>Budget</th>
-                    <th>Aktion</th>
-                  </tr>
+                  <tr><th>Titel</th><th>Ziel</th><th>Zeitraum</th><th>Budget</th><th>Aktion</th></tr>
                 </thead>
                 <tbody></tbody>
               </table>
@@ -562,16 +482,9 @@
                   <h2>Urlaubsausgaben</h2>
                 </div>
               </div>
-
               <table class="data-table" id="tripExpensesTable">
                 <thead>
-                  <tr>
-                    <th>Reise</th>
-                    <th>Datum</th>
-                    <th>Kategorie</th>
-                    <th>Betrag</th>
-                    <th>Aktion</th>
-                  </tr>
+                  <tr><th>Reise</th><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Aktion</th></tr>
                 </thead>
                 <tbody></tbody>
               </table>
@@ -589,26 +502,22 @@
                 <p id="categoryFormModeLabel">Neue Kategorie</p>
               </div>
             </div>
-
             <form id="categoryForm" class="form-grid compact-form">
               <input type="hidden" name="id" />
 
-              <label>Modul
+              <label>
+                Modul
                 <select name="module">
                   <option>Haushalt</option>
                   <option>Urlaub</option>
                 </select>
               </label>
 
-              <label>Hauptkategorie
-                <input type="text" name="main_category" required>
-              </label>
+              <label>Hauptkategorie<input type="text" name="main_category" required></label>
+              <label>Unterkategorie<input type="text" name="sub_category" required></label>
 
-              <label>Unterkategorie
-                <input type="text" name="sub_category" required>
-              </label>
-
-              <label>Sichtbar für anderen Nutzer?
+              <label>
+                Sichtbar für anderen Nutzer?
                 <select name="visible_to_other">
                   <option value="ja">ja</option>
                   <option value="nein">nein</option>
@@ -623,12 +532,7 @@
 
             <table class="data-table" id="categoriesTable">
               <thead>
-                <tr>
-                  <th>Modul</th>
-                  <th>Hauptkategorie</th>
-                  <th>Unterkategorie</th>
-                  <th>Aktion</th>
-                </tr>
+                <tr><th>Modul</th><th>Hauptkategorie</th><th>Unterkategorie</th><th>Aktion</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -641,27 +545,25 @@
                 <p id="fixedCostFormModeLabel">Neue Fixkostenposition</p>
               </div>
             </div>
-
             <form id="fixedCostForm" class="form-grid compact-form">
               <input type="hidden" name="id" />
 
-              <label>Titel
-                <input type="text" name="title" required>
-              </label>
+              <label>Titel<input type="text" name="title" required></label>
 
-              <label>Hauptkategorie
+              <label>
+                Hauptkategorie
                 <select name="main_category" id="fixedMainCategory" required></select>
               </label>
 
-              <label>Unterkategorie
+              <label>
+                Unterkategorie
                 <select name="sub_category" id="fixedSubCategory" required></select>
               </label>
 
-              <label>Betrag (€)
-                <input type="number" name="amount" step="0.01" required>
-              </label>
+              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
 
-              <label>Frequenz
+              <label>
+                Frequenz
                 <select name="frequency">
                   <option>monatlich</option>
                   <option>quartalsweise</option>
@@ -669,29 +571,27 @@
                 </select>
               </label>
 
-              <label>Startmonat
-                <input type="month" name="start_month">
-              </label>
+              <label>Startmonat<input type="month" name="start_month"></label>
+              <label>Endmonat<input type="month" name="end_month"></label>
 
-              <label>Endmonat
-                <input type="month" name="end_month">
-              </label>
-
-              <label>Bezahlt von
+              <label>
+                Bezahlt von
                 <select name="paid_by">
                   <option>Hofer Maximilian</option>
                   <option>Jana March</option>
                 </select>
               </label>
 
-              <label>Split aktiv
+              <label>
+                Split aktiv?
                 <select name="split_enabled">
                   <option value="nein" selected>nein</option>
                   <option value="ja">ja</option>
                 </select>
               </label>
 
-              <label>Dein Anteil
+              <label>
+                Anteil Eigentümer
                 <select name="split_percent">
                   <option value="100" selected>100 %</option>
                   <option value="90">90 %</option>
@@ -707,16 +607,15 @@
                 </select>
               </label>
 
-              <label>Sichtbar für anderen Nutzer?
+              <label>
+                Sichtbar für anderen Nutzer?
                 <select name="visible_to_other">
                   <option value="ja">ja</option>
                   <option value="nein">nein</option>
                 </select>
               </label>
 
-              <label class="full">Notiz
-                <textarea name="note" rows="3"></textarea>
-              </label>
+              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
 
               <div class="full actions-row">
                 <button class="btn btn-primary" type="submit" id="fixedCostSubmitBtn">Fixkosten speichern</button>
@@ -726,12 +625,7 @@
 
             <table class="data-table" id="fixedCostsTable">
               <thead>
-                <tr>
-                  <th>Titel</th>
-                  <th>Betrag</th>
-                  <th>Frequenz</th>
-                  <th>Aktion</th>
-                </tr>
+                <tr><th>Titel</th><th>Betrag</th><th>Frequenz</th><th>Aktion</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -744,15 +638,13 @@
                 <p id="incomeFormModeLabel">Neue Einnahme</p>
               </div>
             </div>
-
             <form id="incomeForm" class="form-grid compact-form">
               <input type="hidden" name="id" />
 
-              <label>Datum
-                <input type="date" name="date" required>
-              </label>
+              <label>Datum<input type="date" name="date" required></label>
 
-              <label>Einnahmentyp
+              <label>
+                Einnahmentyp
                 <select name="income_type">
                   <option>Gehalt</option>
                   <option>Aktien</option>
@@ -761,13 +653,8 @@
                 </select>
               </label>
 
-              <label>Betrag (€)
-                <input type="number" name="amount" step="0.01" required>
-              </label>
-
-              <label class="full">Notiz
-                <textarea name="note" rows="3"></textarea>
-              </label>
+              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
 
               <div class="full actions-row">
                 <button class="btn btn-primary" type="submit" id="incomeSubmitBtn">Einnahme speichern</button>
@@ -777,12 +664,7 @@
 
             <table class="data-table" id="incomeTable">
               <thead>
-                <tr>
-                  <th>Datum</th>
-                  <th>Typ</th>
-                  <th>Betrag</th>
-                  <th>Aktion</th>
-                </tr>
+                <tr><th>Datum</th><th>Typ</th><th>Betrag</th><th>Aktion</th></tr>
               </thead>
               <tbody></tbody>
             </table>
