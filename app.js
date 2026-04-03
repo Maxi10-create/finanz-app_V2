@@ -109,10 +109,6 @@
 
   const percent = (value) => `${Number(value || 0).toFixed(1)} %`;
 
-  function toPercent(value, income) {
-    return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
-  }
-
   const escapeHtml = (value) =>
     String(value ?? "").replace(/[&<>"']/g, (m) => ({
       "&": "&amp;",
@@ -121,6 +117,10 @@
       '"': "&quot;",
       "'": "&#039;"
     }[m]));
+
+  function toPercent(value, income) {
+    return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
+  }
 
   const currentMonth = () => new Date().toISOString().slice(0, 7);
   const monthFromDate = (value) => String(value || "").slice(0, 7);
@@ -209,13 +209,11 @@
     if (els.filterEndMonth && !els.filterEndMonth.value) {
       els.filterEndMonth.value = DEFAULT_END_MONTH;
     }
-
     if (els.rangeMonths && !els.rangeMonths.value) {
       els.rangeMonths.value = "12";
     }
 
     const today = new Date().toISOString().slice(0, 10);
-
     const transactionDate = els.transactionForm?.querySelector('input[name="date"]');
     const tripExpenseDate = els.tripExpenseForm?.querySelector('input[name="date"]');
     const incomeDate = els.incomeForm?.querySelector('input[name="date"]');
@@ -259,6 +257,19 @@
     visibleCategories("Haushalt").forEach((r) => set.add(r.main_category));
     visibleCategories("Urlaub").forEach((r) => set.add(r.main_category));
     return [...set].sort();
+  }
+
+  function fillCategoryFilter() {
+    if (!els.filterMainCategory) return;
+
+    const categories = allVisibleMainCategories();
+    const current = els.filterMainCategory.value;
+
+    els.filterMainCategory.innerHTML =
+      '<option value="">Alle Hauptkategorien</option>' +
+      categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join("");
+
+    if (categories.includes(current)) els.filterMainCategory.value = current;
   }
 
   function isVisibleTransaction(row) {
@@ -314,9 +325,7 @@
 
     const ownerShare = amount * (splitPercent / 100);
     const otherShare = amount - ownerShare;
-
-    if (owner === me) return ownerShare;
-    return otherShare;
+    return owner === me ? ownerShare : otherShare;
   }
 
   function getCurrentUserAmount(row) {
@@ -365,10 +374,8 @@
       .filter((row) => {
         const startMonth = monthFromDate(row.start_month || "");
         const endMonth = monthFromDate(row.end_month || "");
-
         if (startMonth && month < startMonth) return false;
         if (endMonth && month > endMonth) return false;
-
         return true;
       });
   }
@@ -410,19 +417,16 @@
 
   function aggregateCategories(rows) {
     const map = new Map();
-
     rows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
       const value = getCurrentUserAmount(row);
       map.set(key, (map.get(key) || 0) + value);
     });
-
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
   function aggregateSubcategories(rows, selectedMainCategory) {
     const map = new Map();
-
     rows
       .filter((row) => !selectedMainCategory || row.main_category === selectedMainCategory)
       .forEach((row) => {
@@ -430,23 +434,7 @@
         const value = getCurrentUserAmount(row);
         map.set(key, (map.get(key) || 0) + value);
       });
-
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }
-
-  function fillCategoryFilter() {
-    if (!els.filterMainCategory) return;
-
-    const categories = allVisibleMainCategories();
-    const current = els.filterMainCategory.value;
-
-    els.filterMainCategory.innerHTML =
-      '<option value="">Alle Hauptkategorien</option>' +
-      categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join("");
-
-    if (categories.includes(current)) {
-      els.filterMainCategory.value = current;
-    }
   }
 
   function populateCategorySelects(module, mainEl, subEl, selectedMain = "", selectedSub = "") {
@@ -583,11 +571,9 @@
     if (els.heroAvailableSub) {
       els.heroAvailableSub.textContent = available >= 0 ? "Positiver Monatsüberschuss" : "Monat aktuell negativ";
     }
-
     if (els.heroFixedCosts) {
       els.heroFixedCosts.textContent = percentMode ? percent(fixedRate) : currency(fixedCosts);
     }
-
     if (els.heroFixedCostsSub) {
       els.heroFixedCostsSub.textContent =
         percentMode ? "Fixkostenquote bezogen auf Einkommen" : "Monatliche Fixkostenbelastung";
@@ -623,7 +609,7 @@
       `).join("");
     }
 
-    return { income, txTotal, tripTotal, fixedCosts, totalExpenses, variableCosts, available, categoryAggregate };
+    return { income, txTotal, tripTotal, fixedCosts, totalExpenses, variableCosts, available, categoryAggregate, topCategory, peerBalance };
   }
 
   function chartOptions(stacked = false) {
@@ -670,86 +656,26 @@
     const fixedSeriesRaw = months.map((m) => fixedCostsMonthlyTotal(m));
     const totalExpenseSeriesRaw = variableSeriesRaw.map((val, i) => val + fixedSeriesRaw[i]);
 
-    const fixedSeries = percentMode
-      ? fixedSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i]))
-      : fixedSeriesRaw;
-
-    const variableSeries = percentMode
-      ? variableSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i]))
-      : variableSeriesRaw;
-
-    const totalExpenseSeries = percentMode
-      ? totalExpenseSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i]))
-      : totalExpenseSeriesRaw;
+    const fixedSeries = percentMode ? fixedSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i])) : fixedSeriesRaw;
+    const variableSeries = percentMode ? variableSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i])) : variableSeriesRaw;
+    const totalExpenseSeries = percentMode ? totalExpenseSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i])) : totalExpenseSeriesRaw;
 
     const datasets = percentMode
       ? [
-          {
-            label: "Totale Kosten",
-            data: totalExpenseSeries,
-            borderColor: "#4f7cff",
-            backgroundColor: "rgba(79,124,255,.15)",
-            fill: false,
-            tension: 0.25
-          },
-          {
-            label: "Fixkosten",
-            data: fixedSeries,
-            borderColor: "#ffbe3d",
-            backgroundColor: "rgba(255,190,61,.15)",
-            fill: false,
-            tension: 0.25
-          },
-          {
-            label: "Variable Kosten",
-            data: variableSeries,
-            borderColor: "#ff6d7a",
-            backgroundColor: "rgba(255,109,122,.15)",
-            fill: false,
-            tension: 0.25
-          }
+          { label: "Totale Kosten", data: totalExpenseSeries, borderColor: "#4f7cff", backgroundColor: "rgba(79,124,255,.15)", fill: false, tension: 0.25 },
+          { label: "Fixkosten", data: fixedSeries, borderColor: "#ffbe3d", backgroundColor: "rgba(255,190,61,.15)", fill: false, tension: 0.25 },
+          { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
         ]
       : [
-          {
-            label: "Einnahmen",
-            data: incomeSeries,
-            borderColor: "#13c296",
-            backgroundColor: "rgba(19,194,150,.15)",
-            fill: false,
-            tension: 0.25
-          },
-          {
-            label: "Totale Kosten",
-            data: totalExpenseSeries,
-            borderColor: "#4f7cff",
-            backgroundColor: "rgba(79,124,255,.15)",
-            fill: false,
-            tension: 0.25
-          },
-          {
-            label: "Fixkosten",
-            data: fixedSeries,
-            borderColor: "#ffbe3d",
-            backgroundColor: "rgba(255,190,61,.15)",
-            fill: false,
-            tension: 0.25
-          },
-          {
-            label: "Variable Kosten",
-            data: variableSeries,
-            borderColor: "#ff6d7a",
-            backgroundColor: "rgba(255,109,122,.15)",
-            fill: false,
-            tension: 0.25
-          }
+          { label: "Einnahmen", data: incomeSeries, borderColor: "#13c296", backgroundColor: "rgba(19,194,150,.15)", fill: false, tension: 0.25 },
+          { label: "Totale Kosten", data: totalExpenseSeries, borderColor: "#4f7cff", backgroundColor: "rgba(79,124,255,.15)", fill: false, tension: 0.25 },
+          { label: "Fixkosten", data: fixedSeries, borderColor: "#ffbe3d", backgroundColor: "rgba(255,190,61,.15)", fill: false, tension: 0.25 },
+          { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
         ];
 
     ensureChart("masterChart", "masterChart", {
       type: "line",
-      data: {
-        labels: months,
-        datasets
-      },
+      data: { labels: months, datasets },
       options: chartOptions()
     });
 
@@ -868,16 +794,9 @@
     if (!els.rangeOverviewTableBody) return;
 
     const months = monthRange();
-
     const income = months.reduce((sum, m) => sum + monthlyIncome(m), 0);
-    const txTotal = months.reduce((sum, m) => {
-      return sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0);
-    }, 0);
-
-    const tripTotal = months.reduce((sum, m) => {
-      return sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0);
-    }, 0);
-
+    const txTotal = months.reduce((sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
+    const tripTotal = months.reduce((sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
     const fixedCosts = months.reduce((sum, m) => sum + fixedCostsMonthlyTotal(m), 0);
     const variableCosts = txTotal + tripTotal;
     const totalExpenses = variableCosts + fixedCosts;
@@ -1114,7 +1033,6 @@
 
     Object.entries(record).forEach(([key, value]) => {
       if (key === "_clientKey") return;
-
       const field = form.elements.namedItem(key);
       if (!field) return;
       if (field instanceof RadioNodeList) return;
