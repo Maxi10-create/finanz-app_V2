@@ -78,7 +78,10 @@
     tripExpenseCancelEditBtn: document.getElementById("tripExpenseCancelEditBtn"),
     categoryCancelEditBtn: document.getElementById("categoryCancelEditBtn"),
     fixedCostCancelEditBtn: document.getElementById("fixedCostCancelEditBtn"),
-    incomeCancelEditBtn: document.getElementById("incomeCancelEditBtn")
+    incomeCancelEditBtn: document.getElementById("incomeCancelEditBtn"),
+
+    fixedCompositionLabel: document.getElementById("fixedCompositionLabel"),
+    variableCompositionLabel: document.getElementById("variableCompositionLabel")
   };
 
   const editState = {
@@ -253,6 +256,23 @@
     return String(row.visible_to_other || "").toLowerCase() === "ja";
   }
 
+  function getCurrentUserAmount(row) {
+    const amount = Number(row.amount || 0);
+    const splitPercent = Number(row.split_percent || 50);
+    const owner = row.owner_user || "";
+    const me = currentUserName();
+
+    if (owner === me) {
+      return amount * (splitPercent / 100);
+    }
+
+    if (String(row.visible_to_other || "").toLowerCase() === "ja") {
+      return amount * ((100 - splitPercent) / 100);
+    }
+
+    return 0;
+  }
+
   function filteredTransactionsForMonth(month) {
     const person = els.filterPerson?.value || "";
     const category = els.filterMainCategory?.value || "";
@@ -337,29 +357,15 @@
     return balance;
   }
 
-  function getCurrentUserAmount(row) {
-    const amount = Number(row.amount || 0);
-    const splitPercent = Number(row.split_percent || 50);
-    const owner = row.owner_user || "";
-    const me = currentUserName();
-
-    if (owner === me) {
-    return amount * (splitPercent / 100);
-    }
-
-    if (String(row.visible_to_other || "").toLowerCase() === "ja") {
-    return amount * ((100 - splitPercent) / 100);
-    }
-
-    return 0;
-  }
-
   function aggregateCategories(rows) {
     const map = new Map();
+
     rows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
-      map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
+      const value = getCurrentUserAmount(row);
+      map.set(key, (map.get(key) || 0) + value);
     });
+
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
@@ -494,7 +500,7 @@
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
   }
 
-  function actionButtons(type, idField, idValue) {
+  function actionButtons(type, idValue) {
     return `
       <div class="table-actions">
         <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-id="${escapeHtml(idValue)}">Bearbeiten</button>
@@ -505,8 +511,8 @@
 
   function renderKpis(month, txRows, tripRows) {
     const income = monthlyIncome(month);
-    const txTotal = txRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const tripTotal = tripRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const txTotal = txRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
+    const tripTotal = tripRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
     const fixedCosts = fixedCostsMonthlyTotal(month);
     const totalExpenses = txTotal + tripTotal;
     const variableCosts = Math.max(totalExpenses - fixedCosts, 0);
@@ -596,19 +602,21 @@
     return {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: "#d8e4ff" } } },
+      plugins: {
+        legend: { labels: { color: "#d8e4ff" } }
+      },
       scales: {
-        x: { stacked, ticks: { color: "#aec1e6" }, grid: { color: "rgba(255,255,255,.05)" } },
-        y: { stacked, ticks: { color: "#aec1e6" }, grid: { color: "rgba(255,255,255,.05)" } }
+        x: {
+          stacked,
+          ticks: { color: "#aec1e6" },
+          grid: { color: "rgba(255,255,255,.05)" }
+        },
+        y: {
+          stacked,
+          ticks: { color: "#aec1e6" },
+          grid: { color: "rgba(255,255,255,.05)" }
+        }
       }
-    };
-  }
-
-  function doughnutOptions() {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { color: "#d8e4ff", boxWidth: 14 } } }
     };
   }
 
@@ -622,64 +630,117 @@
   function renderCharts(month, txRows, tripRows, metrics) {
     const months = monthRange();
 
-    const expenseSeries = months.map((m) => {
-      const tx = filteredTransactionsForMonth(m).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-      const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const incomeSeries = months.map((m) => monthlyIncome(m));
+    const totalExpenseSeries = months.map((m) => {
+      const tx = filteredTransactionsForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
+      const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
       return tx + trip;
     });
 
-    const incomeSeries = months.map((m) => monthlyIncome(m));
+    const fixedSeries = months.map((m) => fixedCostsMonthlyTotal(m));
+    const variableSeries = totalExpenseSeries.map((val, i) => Math.max(val - fixedSeries[i], 0));
 
-    ensureChart("trendChart", "trendChart", {
+    ensureChart("masterChart", "masterChart", {
       type: "line",
       data: {
         labels: months,
+        datasets: [
+          {
+            label: "Einnahmen",
+            data: incomeSeries,
+            borderColor: "#13c296",
+            backgroundColor: "rgba(19,194,150,.15)",
+            fill: false,
+            tension: 0.25
+          },
+          {
+            label: "Totale Kosten",
+            data: totalExpenseSeries,
+            borderColor: "#4f7cff",
+            backgroundColor: "rgba(79,124,255,.15)",
+            fill: false,
+            tension: 0.25
+          },
+          {
+            label: "Fixkosten",
+            data: fixedSeries,
+            borderColor: "#ffbe3d",
+            backgroundColor: "rgba(255,190,61,.15)",
+            fill: false,
+            tension: 0.25
+          },
+          {
+            label: "Variable Kosten",
+            data: variableSeries,
+            borderColor: "#ff6d7a",
+            backgroundColor: "rgba(255,109,122,.15)",
+            fill: false,
+            tension: 0.25
+          }
+        ]
+      },
+      options: chartOptions()
+    });
+
+    const fixedMonthRows = activeFixedCostsForMonth(month);
+    const fixedAgg = new Map();
+    fixedMonthRows.forEach((row) => {
+      const key = row.main_category || "Ohne Kategorie";
+      fixedAgg.set(key, (fixedAgg.get(key) || 0) + normalizeFrequency(row.amount, row.frequency));
+    });
+
+    if (els.fixedCompositionLabel) {
+      els.fixedCompositionLabel.textContent = "Aktueller Monat";
+    }
+
+    ensureChart("fixedCompositionChart", "fixedCompositionChart", {
+      type: "bar",
+      data: {
+        labels: [...fixedAgg.keys()],
         datasets: [{
-          label: "Ausgaben gesamt",
-          data: expenseSeries,
-          borderColor: "#61c9ff",
-          backgroundColor: "rgba(97,201,255,.18)",
-          fill: true,
-          tension: 0.28
+          label: "Fixkosten",
+          data: [...fixedAgg.values()],
+          backgroundColor: "rgba(255,190,61,.82)"
         }]
       },
       options: chartOptions()
     });
 
-    ensureChart("incomeExpenseChart", "incomeExpenseChart", {
-      type: "bar",
-      data: {
-        labels: months,
-        datasets: [
-          { label: "Einnahmen", data: incomeSeries, backgroundColor: "rgba(19,194,150,.78)" },
-          { label: "Ausgaben", data: expenseSeries, backgroundColor: "rgba(79,124,255,.78)" }
-        ]
-      },
-      options: chartOptions(true)
+    const variableRows = txRows.concat(tripRows);
+    const variableAgg = new Map();
+    variableRows.forEach((row) => {
+      const key = row.main_category || "Ohne Kategorie";
+      variableAgg.set(key, (variableAgg.get(key) || 0) + getCurrentUserAmount(row));
     });
 
-    ensureChart("categoryChart", "categoryChart", {
-      type: "doughnut",
+    if (els.variableCompositionLabel) {
+      els.variableCompositionLabel.textContent = "Aktueller Monat";
+    }
+
+    ensureChart("variableCompositionChart", "variableCompositionChart", {
+      type: "bar",
+      data: {
+        labels: [...variableAgg.keys()],
+        datasets: [{
+          label: "Variable Kosten",
+          data: [...variableAgg.values()],
+          backgroundColor: "rgba(79,124,255,.82)"
+        }]
+      },
+      options: chartOptions()
+    });
+
+    ensureChart("categoryBreakdownChart", "categoryBreakdownChart", {
+      type: "bar",
       data: {
         labels: metrics.categoryAggregate.map((row) => row[0]),
         datasets: [{
+          label: "Kosten",
           data: metrics.categoryAggregate.map((row) => row[1]),
-          backgroundColor: ["#4f7cff", "#61c9ff", "#13c296", "#ffbe3d", "#ff6d7a", "#9f7aea", "#00c2a8", "#f97316"]
+          backgroundColor: "rgba(97,201,255,.82)"
         }]
       },
-      options: doughnutOptions()
-    });
-
-    ensureChart("fixedVariableChart", "fixedVariableChart", {
-      type: "bar",
-      data: {
-        labels: ["Aktueller Monat"],
-        datasets: [
-          { label: "Fixkosten", data: [metrics.fixedCosts], backgroundColor: "rgba(255,190,61,.82)" },
-          { label: "Variable Kosten", data: [metrics.variableCosts], backgroundColor: "rgba(79,124,255,.82)" }
-        ]
-      },
-      options: chartOptions(true)
+      options: chartOptions()
     });
   }
 
@@ -710,9 +771,9 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
-            <td>${escapeHtml(currency(row.amount))}</td>
+            <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
             <td>${escapeHtml(row.paid_by)}</td>
-            <td>${actionButtons("transaction", "id", row.id)}</td>
+            <td>${actionButtons("transaction", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="6" class="table-empty">Noch keine Haushaltsbuchungen vorhanden</td></tr>';
@@ -729,7 +790,7 @@
             <td>${escapeHtml(row.destination)}</td>
             <td>${escapeHtml(`${normalizeDateOnly(row.start_date)} – ${normalizeDateOnly(row.end_date)}`)}</td>
             <td>${escapeHtml(currency(row.planned_budget))}</td>
-            <td>${actionButtons("trip", "trip_id", row.trip_id)}</td>
+            <td>${actionButtons("trip", row.trip_id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Reisen vorhanden</td></tr>';
@@ -746,8 +807,8 @@
             <td>${escapeHtml(tripMap.get(row.trip_id) || row.trip_id)}</td>
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
-            <td>${escapeHtml(currency(row.amount))}</td>
-            <td>${actionButtons("tripExpense", "id", row.id)}</td>
+            <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
+            <td>${actionButtons("tripExpense", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
@@ -763,7 +824,7 @@
             <td>${escapeHtml(row.module)}</td>
             <td>${escapeHtml(row.main_category)}</td>
             <td>${escapeHtml(row.sub_category)}</td>
-            <td>${actionButtons("category", "id", row.id)}</td>
+            <td>${actionButtons("category", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Kategorien vorhanden</td></tr>';
@@ -779,7 +840,7 @@
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
             <td>${escapeHtml(row.frequency)}</td>
-            <td>${actionButtons("fixedCost", "id", row.id)}</td>
+            <td>${actionButtons("fixedCost", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Fixkosten vorhanden</td></tr>';
@@ -795,7 +856,7 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.income_type)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
-            <td>${actionButtons("income", "id", row.id)}</td>
+            <td>${actionButtons("income", row.id)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Einnahmen vorhanden</td></tr>';
@@ -862,9 +923,9 @@
     if (data.date && !data.month_key) data.month_key = data.date.slice(0, 7);
 
     if (user) {
-      data.created_by = user.displayName;
+      if (!data.created_by) data.created_by = user.displayName;
       data.updated_by = user.displayName;
-      data.owner_user = user.displayName;
+      if (!data.owner_user) data.owner_user = user.displayName;
     }
 
     return data;
@@ -872,10 +933,10 @@
 
   function setFormValues(form, record) {
     if (!form || !record) return;
+
     Object.entries(record).forEach(([key, value]) => {
       const field = form.elements.namedItem(key);
       if (!field) return;
-
       if (field instanceof RadioNodeList) return;
 
       if (field.tagName === "INPUT" && field.type === "date") {
@@ -1018,24 +1079,12 @@
   }
 
   function getRecordByTypeAndId(type, id) {
-    if (type === "transaction") {
-      return (state.data.transactions || []).find((r) => String(r.id) === String(id));
-    }
-    if (type === "trip") {
-      return (state.data.trips || []).find((r) => String(r.trip_id) === String(id));
-    }
-    if (type === "tripExpense") {
-      return (state.data.tripExpenses || []).find((r) => String(r.id) === String(id));
-    }
-    if (type === "category") {
-      return (state.data.categories || []).find((r) => String(r.id) === String(id));
-    }
-    if (type === "fixedCost") {
-      return (state.data.fixedCosts || []).find((r) => String(r.id) === String(id));
-    }
-    if (type === "income") {
-      return (state.data.income || []).find((r) => String(r.id) === String(id));
-    }
+    if (type === "transaction") return (state.data.transactions || []).find((r) => String(r.id) === String(id));
+    if (type === "trip") return (state.data.trips || []).find((r) => String(r.trip_id) === String(id));
+    if (type === "tripExpense") return (state.data.tripExpenses || []).find((r) => String(r.id) === String(id));
+    if (type === "category") return (state.data.categories || []).find((r) => String(r.id) === String(id));
+    if (type === "fixedCost") return (state.data.fixedCosts || []).find((r) => String(r.id) === String(id));
+    if (type === "income") return (state.data.income || []).find((r) => String(r.id) === String(id));
     return null;
   }
 
@@ -1053,11 +1102,8 @@
     };
 
     const payload = {};
-    if (type === "trip") {
-      payload.trip_id = id;
-    } else {
-      payload.id = id;
-    }
+    if (type === "trip") payload.trip_id = id;
+    else payload.id = id;
 
     await apiPost(actionMap[type], payload);
     resetFormUi(type);
@@ -1068,6 +1114,8 @@
   async function submitForm(form, addAction, updateAction, successAddText, successUpdateText, type) {
     try {
       clearMessage();
+      console.log("submitForm", { action: addAction, type, formData: Object.fromEntries(new FormData(form).entries()) });
+
       const data = formToObject(form);
 
       const isEdit =
@@ -1081,6 +1129,8 @@
       const action = isEdit ? updateAction : addAction;
 
       await apiPost(action, data);
+      console.log("submit ok");
+
       resetFormUi(type);
       await loadAll();
       showMessage(isEdit ? successUpdateText : successAddText, "success");
@@ -1088,23 +1138,6 @@
       showMessage(error.message || "Speichern fehlgeschlagen.", "error");
       console.error(error);
     }
-  }
-
-  function formToObject(form) {
-    const data = Object.fromEntries(new FormData(form).entries());
-    const user = currentUser();
-
-    if (data.date && !data.month_key) {
-      data.month_key = data.date.slice(0, 7);
-    }
-
-    if (user) {
-      if (!data.created_by) data.created_by = user.displayName;
-      data.updated_by = user.displayName;
-      if (!data.owner_user) data.owner_user = user.displayName;
-    }
-
-    return data;
   }
 
   function bindForms() {
@@ -1240,12 +1273,6 @@
     });
 
     els.reloadBtn?.addEventListener("click", loadAll);
-
-    els.fixedModeBtn?.addEventListener("click", () => {
-      state.fixedCostDisplayMode = state.fixedCostDisplayMode === "currency" ? "percent" : "currency";
-      els.fixedModeBtn.textContent = state.fixedCostDisplayMode === "currency" ? "€ anzeigen" : "% anzeigen";
-      renderDashboard();
-    });
   }
 
   function setupUiOnce() {
