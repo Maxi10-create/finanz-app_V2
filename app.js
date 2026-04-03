@@ -1,4 +1,6 @@
 (() => {
+  const DEFAULT_END_MONTH = "2026-12";
+
   const state = {
     activeApiBaseUrl: null,
     charts: {},
@@ -150,6 +152,17 @@
     els.messageBox.innerHTML = "";
   }
 
+  function withClientKeys(raw) {
+    return {
+      income: (raw.income || []).map((row, idx) => ({ ...row, _clientKey: `income_${idx}_${row.id || ""}` })),
+      transactions: (raw.transactions || []).map((row, idx) => ({ ...row, _clientKey: `transaction_${idx}_${row.id || ""}` })),
+      trips: (raw.trips || []).map((row, idx) => ({ ...row, _clientKey: `trip_${idx}_${row.trip_id || ""}` })),
+      tripExpenses: (raw.tripExpenses || []).map((row, idx) => ({ ...row, _clientKey: `tripExpense_${idx}_${row.id || ""}` })),
+      categories: (raw.categories || []).map((row, idx) => ({ ...row, _clientKey: `category_${idx}_${row.id || ""}` })),
+      fixedCosts: (raw.fixedCosts || []).map((row, idx) => ({ ...row, _clientKey: `fixedCost_${idx}_${row.id || ""}` }))
+    };
+  }
+
   async function fetchJson(url, options = {}) {
     const response = await fetch(url, options);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -194,7 +207,11 @@
 
   function setDefaultMonth() {
     if (els.filterEndMonth && !els.filterEndMonth.value) {
-      els.filterEndMonth.value = currentMonth();
+      els.filterEndMonth.value = DEFAULT_END_MONTH;
+    }
+
+    if (els.rangeMonths && !els.rangeMonths.value) {
+      els.rangeMonths.value = "12";
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -209,7 +226,7 @@
   }
 
   function monthRange() {
-    const end = els.filterEndMonth?.value || currentMonth();
+    const end = els.filterEndMonth?.value || DEFAULT_END_MONTH;
     const count = Number(els.rangeMonths?.value || 12);
     const months = [];
 
@@ -235,6 +252,13 @@
         if ((row.owner_user || "") === user) return true;
         return String(row.visible_to_other || "").toLowerCase() === "ja";
       });
+  }
+
+  function allVisibleMainCategories() {
+    const set = new Set();
+    visibleCategories("Haushalt").forEach((r) => set.add(r.main_category));
+    visibleCategories("Urlaub").forEach((r) => set.add(r.main_category));
+    return [...set].sort();
   }
 
   function isVisibleTransaction(row) {
@@ -299,37 +323,14 @@
     return getUserShareFromAmount(row, row.amount);
   }
 
-  function getOtherUserAmount(row) {
-    const amount = Number(row.amount || 0);
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    const splitPercent = Number(row.split_percent || 100);
-    const owner = row.owner_user || "";
-    const me = currentUserName();
-
-    if (!splitEnabled) {
-      return owner === me ? 0 : amount;
-    }
-
-    const ownerShare = amount * (splitPercent / 100);
-    const otherShare = amount - ownerShare;
-
-    if (owner === me) return otherShare;
-    return ownerShare;
-  }
-
   function filteredTransactionsForMonth(month) {
-    const person = els.filterPerson?.value || "";
-    const category = els.filterMainCategory?.value || "";
-
     return (state.data.transactions || [])
       .filter(isVisibleTransaction)
-      .filter((row) => monthFromDate(row.month_key || row.date) === month)
-      .filter((row) => !person || [row.paid_by, row.owner_user].includes(person))
-      .filter((row) => !category || row.main_category === category);
+      .filter((row) => monthFromDate(row.month_key || row.date) === month);
   }
 
   function filteredTransactions() {
-    const month = els.filterEndMonth?.value || currentMonth();
+    const month = els.filterEndMonth?.value || DEFAULT_END_MONTH;
     return filteredTransactionsForMonth(month);
   }
 
@@ -340,7 +341,7 @@
   }
 
   function filteredTripExpenses() {
-    const month = els.filterEndMonth?.value || currentMonth();
+    const month = els.filterEndMonth?.value || DEFAULT_END_MONTH;
     return filteredTripExpensesForMonth(month);
   }
 
@@ -396,17 +397,11 @@
       const otherShare = amount - ownerShare;
 
       if (owner === me) {
-        if (paidBy === me) {
-          balance += otherShare;
-        } else {
-          balance -= ownerShare;
-        }
+        if (paidBy === me) balance += otherShare;
+        else balance -= ownerShare;
       } else {
-        if (paidBy === me) {
-          balance += ownerShare;
-        } else {
-          balance -= otherShare;
-        }
+        if (paidBy === me) balance += ownerShare;
+        else balance -= otherShare;
       }
     });
 
@@ -425,15 +420,29 @@
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
+  function aggregateSubcategories(rows, selectedMainCategory) {
+    const map = new Map();
+
+    rows
+      .filter((row) => !selectedMainCategory || row.main_category === selectedMainCategory)
+      .forEach((row) => {
+        const key = row.sub_category || "Ohne Unterkategorie";
+        const value = getCurrentUserAmount(row);
+        map.set(key, (map.get(key) || 0) + value);
+      });
+
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
   function fillCategoryFilter() {
     if (!els.filterMainCategory) return;
 
-    const categories = [...new Set(visibleCategories("Haushalt").map((row) => row.main_category))];
+    const categories = allVisibleMainCategories();
     const current = els.filterMainCategory.value;
 
     els.filterMainCategory.innerHTML =
-      '<option value="">Alle</option>' +
-      categories.map((cat) => `<option>${escapeHtml(cat)}</option>`).join("");
+      '<option value="">Alle Hauptkategorien</option>' +
+      categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join("");
 
     if (categories.includes(current)) {
       els.filterMainCategory.value = current;
@@ -495,29 +504,15 @@
   }
 
   function getTransactionsForTable() {
-    const day = els.filterDay?.value || "";
-
-    let rows = (state.data.transactions || [])
+    return (state.data.transactions || [])
       .filter(isVisibleTransaction)
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-
-    if (day) {
-      return rows.filter((row) => normalizeDateOnly(row.date) === day);
-    }
-
-    return rows.slice(0, 10);
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .slice(0, 10);
   }
 
   function getTripsForTable() {
-    const months = new Set(monthRange());
-
     return (state.data.trips || [])
       .filter(isVisibleTrip)
-      .filter((row) => {
-        const startMonth = monthFromDate(row.start_date || "");
-        const endMonth = monthFromDate(row.end_date || "");
-        return months.has(startMonth) || months.has(endMonth);
-      })
       .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
   }
 
@@ -556,11 +551,11 @@
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
   }
 
-  function actionButtons(type, idValue) {
+  function actionButtons(type, clientKey) {
     return `
       <div class="table-actions">
-        <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-id="${escapeHtml(idValue)}">Bearbeiten</button>
-        <button type="button" class="btn btn-ghost btn-xs js-delete" data-type="${escapeHtml(type)}" data-id="${escapeHtml(idValue)}">Löschen</button>
+        <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-key="${escapeHtml(clientKey)}">Bearbeiten</button>
+        <button type="button" class="btn btn-ghost btn-xs js-delete" data-type="${escapeHtml(type)}" data-key="${escapeHtml(clientKey)}">Löschen</button>
       </div>
     `;
   }
@@ -624,38 +619,6 @@
           <div class="kpi-label">${escapeHtml(label)}</div>
           <div class="kpi-value">${escapeHtml(value)}</div>
           <div class="kpi-sub">${escapeHtml(sub)}</div>
-        </div>
-      `).join("");
-    }
-
-    if (els.monthlySummary) {
-      els.monthlySummary.innerHTML = [
-        ["Monat", month],
-        ["Haushaltsausgaben", percentMode ? percent(toPercent(txTotal, income)) : currency(txTotal)],
-        ["Urlaubsausgaben", percentMode ? percent(toPercent(tripTotal, income)) : currency(tripTotal)],
-        ["Fixkosten (monatl.)", percentMode ? percent(fixedRate) : currency(fixedCosts)],
-        ["Variable Kosten", percentMode ? percent(toPercent(variableCosts, income)) : currency(variableCosts)],
-        ["Überschuss", percentMode ? percent(toPercent(available, income)) : currency(available)]
-      ].map(([k, v]) => `
-        <div class="summary-row">
-          <div class="key">${escapeHtml(k)}</div>
-          <div class="val">${escapeHtml(v)}</div>
-        </div>
-      `).join("");
-    }
-
-    if (els.insightList) {
-      els.insightList.innerHTML = [
-        ["Top-Kategorie", topCategory],
-        [`Saldo ${otherUserName()}`, currency(peerBalance)],
-        ["Fixkosten aktiv", `${activeFixedCostsForMonth(month).length} Positionen`],
-        ["Haushaltstransaktionen", `${txRows.length}`],
-        ["Urlaubstransaktionen", `${tripRows.length}`],
-        ["Verfügbare Mittel", percentMode ? percent(toPercent(available, income)) : currency(available)]
-      ].map(([k, v]) => `
-        <div class="summary-row">
-          <div class="key">${escapeHtml(k)}</div>
-          <div class="val">${escapeHtml(v)}</div>
         </div>
       `).join("");
     }
@@ -839,13 +802,20 @@
       options: chartOptions()
     });
 
+    const selectedMainCategory = els.filterMainCategory?.value || "";
+    const breakdownAggregate = selectedMainCategory
+      ? aggregateSubcategories(txRows.concat(tripRows), selectedMainCategory)
+      : aggregateCategories(txRows.concat(tripRows));
+
     ensureChart("categoryBreakdownChart", "categoryBreakdownChart", {
       type: "bar",
       data: {
-        labels: metrics.categoryAggregate.map((row) => row[0]),
+        labels: breakdownAggregate.map((row) => row[0]),
         datasets: [{
-          label: percentMode ? "Kosten %" : "Kosten",
-          data: metrics.categoryAggregate.map((row) => percentMode ? toPercent(row[1], metrics.income) : row[1]),
+          label: selectedMainCategory
+            ? `Unterkategorien ${selectedMainCategory}${percentMode ? " %" : ""}`
+            : `Hauptkategorien${percentMode ? " %" : ""}`,
+          data: breakdownAggregate.map((row) => percentMode ? toPercent(row[1], metrics.income) : row[1]),
           backgroundColor: "rgba(97,201,255,.82)"
         }]
       },
@@ -975,7 +945,7 @@
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
             <td>${escapeHtml(row.paid_by)}</td>
-            <td>${actionButtons("transaction", row.id)}</td>
+            <td>${actionButtons("transaction", row._clientKey)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="6" class="table-empty">Noch keine Haushaltsbuchungen vorhanden</td></tr>';
@@ -992,7 +962,7 @@
             <td>${escapeHtml(row.destination)}</td>
             <td>${escapeHtml(`${normalizeDateOnly(row.start_date)} – ${normalizeDateOnly(row.end_date)}`)}</td>
             <td>${escapeHtml(currency(row.planned_budget))}</td>
-            <td>${actionButtons("trip", row.trip_id)}</td>
+            <td>${actionButtons("trip", row._clientKey)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Reisen vorhanden</td></tr>';
@@ -1010,7 +980,7 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
-            <td>${actionButtons("tripExpense", row.id)}</td>
+            <td>${actionButtons("tripExpense", row._clientKey)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
@@ -1026,7 +996,7 @@
             <td>${escapeHtml(row.module)}</td>
             <td>${escapeHtml(row.main_category)}</td>
             <td>${escapeHtml(row.sub_category)}</td>
-            <td>${actionButtons("category", row.id)}</td>
+            <td>${actionButtons("category", row._clientKey)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Kategorien vorhanden</td></tr>';
@@ -1042,7 +1012,7 @@
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(currency(getUserShareFromAmount(row, row.amount)))}</td>
             <td>${escapeHtml(row.frequency)}</td>
-            <td>${actionButtons("fixedCost", row.id)}</td>
+            <td>${actionButtons("fixedCost", row._clientKey)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Fixkosten vorhanden</td></tr>';
@@ -1058,14 +1028,14 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.income_type)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
-            <td>${actionButtons("income", row.id)}</td>
+            <td>${actionButtons("income", row._clientKey)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Einnahmen vorhanden</td></tr>';
   }
 
   function renderDashboard() {
-    const month = els.filterEndMonth?.value || currentMonth();
+    const month = els.filterEndMonth?.value || DEFAULT_END_MONTH;
     const txRows = filteredTransactions();
     const tripRows = filteredTripExpenses();
     const metrics = renderKpis(month, txRows, tripRows);
@@ -1099,14 +1069,14 @@
       if (els.syncStatus) els.syncStatus.textContent = "Synchronisierung läuft...";
 
       const result = await apiGet("getAll");
-      state.data = result.data || {
+      state.data = withClientKeys(result.data || {
         income: [],
         transactions: [],
         trips: [],
         tripExpenses: [],
         categories: [],
         fixedCosts: []
-      };
+      });
 
       renderAll();
 
@@ -1126,6 +1096,8 @@
     const data = Object.fromEntries(new FormData(form).entries());
     const user = currentUser();
 
+    delete data._clientKey;
+
     if (data.date && !data.month_key) data.month_key = data.date.slice(0, 7);
 
     if (user) {
@@ -1141,6 +1113,8 @@
     if (!form || !record) return;
 
     Object.entries(record).forEach(([key, value]) => {
+      if (key === "_clientKey") return;
+
       const field = form.elements.namedItem(key);
       if (!field) return;
       if (field instanceof RadioNodeList) return;
@@ -1296,17 +1270,17 @@
     }
   }
 
-  function getRecordByTypeAndId(type, id) {
-    if (type === "transaction") return (state.data.transactions || []).find((r) => String(r.id) === String(id));
-    if (type === "trip") return (state.data.trips || []).find((r) => String(r.trip_id) === String(id));
-    if (type === "tripExpense") return (state.data.tripExpenses || []).find((r) => String(r.id) === String(id));
-    if (type === "category") return (state.data.categories || []).find((r) => String(r.id) === String(id));
-    if (type === "fixedCost") return (state.data.fixedCosts || []).find((r) => String(r.id) === String(id));
-    if (type === "income") return (state.data.income || []).find((r) => String(r.id) === String(id));
+  function getRecordByTypeAndKey(type, key) {
+    if (type === "transaction") return (state.data.transactions || []).find((r) => r._clientKey === key);
+    if (type === "trip") return (state.data.trips || []).find((r) => r._clientKey === key);
+    if (type === "tripExpense") return (state.data.tripExpenses || []).find((r) => r._clientKey === key);
+    if (type === "category") return (state.data.categories || []).find((r) => r._clientKey === key);
+    if (type === "fixedCost") return (state.data.fixedCosts || []).find((r) => r._clientKey === key);
+    if (type === "income") return (state.data.income || []).find((r) => r._clientKey === key);
     return null;
   }
 
-  async function deleteRecord(type, id) {
+  async function deleteRecord(type, key) {
     const confirmed = window.confirm("Diesen Eintrag wirklich löschen?");
     if (!confirmed) return;
 
@@ -1319,9 +1293,12 @@
       income: "deleteIncome"
     };
 
+    const record = getRecordByTypeAndKey(type, key);
+    if (!record) throw new Error("Datensatz nicht gefunden.");
+
     const payload = {};
-    if (type === "trip") payload.trip_id = id;
-    else payload.id = id;
+    if (type === "trip") payload.trip_id = record.trip_id;
+    else payload.id = record.id;
 
     await apiPost(actionMap[type], payload);
     resetFormUi(type);
@@ -1442,8 +1419,8 @@
       const editBtn = event.target.closest(".js-edit");
       if (editBtn) {
         const type = editBtn.dataset.type;
-        const id = editBtn.dataset.id;
-        const record = getRecordByTypeAndId(type, id);
+        const key = editBtn.dataset.key;
+        const record = getRecordByTypeAndKey(type, key);
         startEdit(type, record);
         return;
       }
@@ -1451,9 +1428,9 @@
       const deleteBtn = event.target.closest(".js-delete");
       if (deleteBtn) {
         const type = deleteBtn.dataset.type;
-        const id = deleteBtn.dataset.id;
+        const key = deleteBtn.dataset.key;
         try {
-          await deleteRecord(type, id);
+          await deleteRecord(type, key);
         } catch (error) {
           showMessage(error.message || "Löschen fehlgeschlagen.", "error");
           console.error(error);
@@ -1478,8 +1455,6 @@
   function bindFilters() {
     [
       els.filterEndMonth,
-      els.filterDay,
-      els.filterPerson,
       els.filterMainCategory,
       els.rangeMonths,
       els.chartMode,
