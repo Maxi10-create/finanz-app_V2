@@ -1,7 +1,4 @@
-const API_VERSION = 'v3-2026-04-03-header-safe';
-
-const USER_NAME = 'Hofer Maximilian';
-const OTHER_PERSON = 'Jana March';
+const API_VERSION = 'v4-2026-04-03-force-schema';
 
 const SHEETS = {
   INCOME: 'Income',
@@ -83,39 +80,32 @@ function doPost(e) {
     const payload = body.payload || {};
 
     if (action === 'addincome') {
-      appendObjectByHeaders_(SHEETS.INCOME, normalizeIncomePayload_(payload));
+      appendBySchema_(SHEETS.INCOME, normalizeIncomePayload_(payload));
       return jsonResponse({ success: true, version: API_VERSION });
     }
 
     if (action === 'addtransaction') {
-      const normalized = normalizeTransactionPayload_(payload);
-
-      return jsonResponse({
-        success: true,
-        version: API_VERSION,
-        debug: true,
-        received_payload: payload,
-        normalized_payload: normalized
-      });
+      appendBySchema_(SHEETS.TRANSACTIONS, normalizeTransactionPayload_(payload));
+      return jsonResponse({ success: true, version: API_VERSION });
     }
 
     if (action === 'addtrip') {
-      appendObjectByHeaders_(SHEETS.TRIPS, normalizeTripPayload_(payload));
+      appendBySchema_(SHEETS.TRIPS, normalizeTripPayload_(payload));
       return jsonResponse({ success: true, version: API_VERSION });
     }
 
     if (action === 'addtripexpense') {
-      appendObjectByHeaders_(SHEETS.TRIP_EXPENSES, normalizeTripExpensePayload_(payload));
+      appendBySchema_(SHEETS.TRIP_EXPENSES, normalizeTripExpensePayload_(payload));
       return jsonResponse({ success: true, version: API_VERSION });
     }
 
     if (action === 'addcategory') {
-      appendObjectByHeaders_(SHEETS.CATEGORIES, normalizeCategoryPayload_(payload));
+      appendBySchema_(SHEETS.CATEGORIES, normalizeCategoryPayload_(payload));
       return jsonResponse({ success: true, version: API_VERSION });
     }
 
     if (action === 'addfixedcost') {
-      appendObjectByHeaders_(SHEETS.FIXED_COSTS, normalizeFixedCostPayload_(payload));
+      appendBySchema_(SHEETS.FIXED_COSTS, normalizeFixedCostPayload_(payload));
       return jsonResponse({ success: true, version: API_VERSION });
     }
 
@@ -195,10 +185,38 @@ function getSpreadsheet_() {
   throw new Error('Kein gebundenes Spreadsheet gefunden. Bitte dieses Apps-Script direkt über Erweiterungen > Apps Script im Ziel-Sheet öffnen und deployen.');
 }
 
-function readSheetObjects_(sheetName) {
-  const sheet = getSpreadsheet_().getSheetByName(sheetName);
+function sanitizeHeaders_(rawHeaders) {
+  return rawHeaders.map((h) => (h == null ? '' : String(h).trim()));
+}
+
+function forceSchema_(sheetName) {
+  const spreadsheet = getSpreadsheet_();
+  const sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) throw new Error('Sheet fehlt: ' + sheetName);
 
+  const schema = SCHEMAS[sheetName];
+  if (!schema) throw new Error('Kein Schema definiert für: ' + sheetName);
+
+  const lastCol = Math.max(sheet.getLastColumn(), schema.length);
+
+  if (lastCol > schema.length) {
+    const extraHeaders = sheet.getRange(1, schema.length + 1, 1, lastCol - schema.length).getValues()[0];
+    const hasDataRight = extraHeaders.some((v) => String(v || '').trim() !== '');
+    if (hasDataRight) {
+      throw new Error('Rechts von der erwarteten Struktur existieren zusätzliche Header in ' + sheetName + '. Bitte diese Spalten löschen.');
+    }
+  }
+
+  if (sheet.getLastColumn() < schema.length) {
+    sheet.insertColumnsAfter(sheet.getLastColumn(), schema.length - sheet.getLastColumn());
+  }
+
+  sheet.getRange(1, 1, 1, schema.length).setValues([schema]);
+  return sheet;
+}
+
+function readSheetObjects_(sheetName) {
+  const sheet = forceSchema_(sheetName);
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];
 
@@ -217,23 +235,23 @@ function readSheetObjects_(sheetName) {
     });
 }
 
-function appendObjectByHeaders_(sheetName, payload) {
-  const sheet = getSpreadsheet_().getSheetByName(sheetName);
-  if (!sheet) throw new Error('Sheet fehlt: ' + sheetName);
+function appendBySchema_(sheetName, payload) {
+  const sheet = forceSchema_(sheetName);
+  const schema = SCHEMAS[sheetName];
 
-  const headers = sanitizeHeaders_(sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]);
-  const row = headers.map((header) => {
-    if (!header) return '';
-    return payload[header] != null ? payload[header] : '';
-  });
-
+  const row = schema.map((field) => payload[field] != null ? payload[field] : '');
   sheet.appendRow(row);
+
+  return {
+    spreadsheetId: sheet.getParent().getId(),
+    spreadsheetName: sheet.getParent().getName(),
+    sheetName: sheet.getName(),
+    rowWritten: sheet.getLastRow()
+  };
 }
 
 function updateObjectById_(sheetName, idField, idValue, payload) {
-  const sheet = getSpreadsheet_().getSheetByName(sheetName);
-  if (!sheet) throw new Error('Sheet fehlt: ' + sheetName);
-
+  const sheet = forceSchema_(sheetName);
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) throw new Error('Keine Daten in Sheet: ' + sheetName);
 
@@ -258,9 +276,7 @@ function updateObjectById_(sheetName, idField, idValue, payload) {
 }
 
 function softDeleteById_(sheetName, idField, idValue) {
-  const sheet = getSpreadsheet_().getSheetByName(sheetName);
-  if (!sheet) throw new Error('Sheet fehlt: ' + sheetName);
-
+  const sheet = forceSchema_(sheetName);
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) throw new Error('Keine Daten in Sheet: ' + sheetName);
 
@@ -282,23 +298,6 @@ function softDeleteById_(sheetName, idField, idValue) {
   }
 }
 
-function sanitizeHeaders_(rawHeaders) {
-  return rawHeaders.map((h) => (h == null ? '' : String(h).trim()));
-}
-
-function ensureSchema_(sheetName) {
-  const sheet = getSpreadsheet_().getSheetByName(sheetName);
-  if (!sheet) throw new Error('Sheet fehlt: ' + sheetName);
-
-  const actual = sanitizeHeaders_(sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]).filter(Boolean);
-  const expected = SCHEMAS[sheetName] || [];
-
-  const missing = expected.filter((h) => !actual.includes(h));
-  if (missing.length) {
-    throw new Error('Fehlende Header in ' + sheetName + ': ' + missing.join(', '));
-  }
-}
-
 function normalizeIncomePayload_(payload, isUpdate) {
   const obj = Object.assign({}, payload);
   const now = new Date();
@@ -310,6 +309,7 @@ function normalizeIncomePayload_(payload, isUpdate) {
 
   obj.updated_at = now;
   if (obj.date && !obj.month_key) obj.month_key = normalizeMonthKey_(obj.date);
+  if (obj.note == null) obj.note = '';
   if (obj.is_deleted == null) obj.is_deleted = '';
   return obj;
 }
@@ -409,8 +409,7 @@ function normalizeFixedCostPayload_(payload, isUpdate) {
 }
 
 function normalizeMonthKey_(value) {
-  const s = String(value || '');
-  return s.slice(0, 7);
+  return String(value || '').slice(0, 7);
 }
 
 function calculateDays_(startDate, endDate) {
