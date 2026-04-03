@@ -17,6 +17,7 @@
   const els = {
     tabs: document.getElementById("tabs"),
     filterEndMonth: document.getElementById("filterEndMonth") || document.getElementById("filterMonth"),
+    filterDay: document.getElementById("filterDay"),
     filterPerson: document.getElementById("filterPerson"),
     filterMainCategory: document.getElementById("filterMainCategory"),
     rangeMonths: document.getElementById("rangeMonths"),
@@ -55,12 +56,7 @@
     tripExpenseForm: document.getElementById("tripExpenseForm"),
     categoryForm: document.getElementById("categoryForm"),
     fixedCostForm: document.getElementById("fixedCostForm"),
-    incomeForm: document.getElementById("incomeForm"),
-    monthOverviewTableBody: document.querySelector("#monthOverviewTable tbody"),
-    rangeOverviewTableBody: document.querySelector("#rangeOverviewTable tbody"),
-    categoryCompareTableBody: document.querySelector("#categoryCompareTable tbody"),
-    fixedCompositionLabel: document.getElementById("fixedCompositionLabel"),
-    variableCompositionLabel: document.getElementById("variableCompositionLabel")
+    incomeForm: document.getElementById("incomeForm")
   };
 
   const currency = (value) =>
@@ -82,6 +78,7 @@
 
   const currentMonth = () => new Date().toISOString().slice(0, 7);
   const monthFromDate = (value) => String(value || "").slice(0, 7);
+  const normalizeDateOnly = (value) => String(value || "").slice(0, 10);
 
   function currentUser() {
     return typeof getActiveUser === "function" ? getActiveUser() : null;
@@ -181,33 +178,50 @@
     return months;
   }
 
-  function isVisibleToCurrentUser(row, type = "generic") {
-    if (!row || String(row.is_deleted || "").toLowerCase() === "ja") return false;
+  function visibleCategories(module) {
+    const user = currentUserName();
+
+    return (state.data.categories || [])
+      .filter((row) => String(row.module || "") === module)
+      .filter((row) => {
+        if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+        if (module === "Urlaub") return true;
+        if ((row.owner_user || "") === user) return true;
+        return String(row.visible_to_other || "").toLowerCase() === "ja";
+      });
+  }
+
+  function isVisibleTransaction(row) {
+    if (!row) return false;
+    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const user = currentUserName();
-    const other = otherUserName();
+    if ((row.owner_user || "") === user) return true;
 
-    if (type === "income") {
-      return (row.owner_user || "") === user;
-    }
+    const mainCategory = String(row.main_category || "");
+    if (mainCategory === "Wohnen" || mainCategory === "Alltag") return true;
 
-    if (type === "trip" || type === "tripExpense") {
-      return true;
-    }
-
-    const owner = row.owner_user || "";
-    const visible = String(row.visible_to_other || "").toLowerCase();
-
-    if (!owner) return true;
-    if (owner === user) return true;
-    if (visible === "ja") return true;
     return false;
   }
 
-  function visibleCategories(module) {
-    return (state.data.categories || [])
-      .filter((row) => row.module === module)
-      .filter((row) => isVisibleToCurrentUser(row, "category"));
+  function isVisibleTrip(row) {
+    if (!row) return false;
+    return String(row.is_deleted || "").toLowerCase() !== "ja";
+  }
+
+  function isVisibleIncome(row) {
+    if (!row) return false;
+    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+    return (row.owner_user || "") === currentUserName();
+  }
+
+  function isVisibleFixedCost(row) {
+    if (!row) return false;
+    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+
+    const user = currentUserName();
+    if ((row.owner_user || "") === user) return true;
+    return String(row.visible_to_other || "").toLowerCase() === "ja";
   }
 
   function filteredTransactionsForMonth(month) {
@@ -215,7 +229,7 @@
     const category = els.filterMainCategory?.value || "";
 
     return (state.data.transactions || [])
-      .filter((row) => isVisibleToCurrentUser(row, "transaction"))
+      .filter(isVisibleTransaction)
       .filter((row) => monthFromDate(row.month_key || row.date) === month)
       .filter((row) => !person || [row.paid_by, row.owner_user].includes(person))
       .filter((row) => !category || row.main_category === category);
@@ -228,7 +242,7 @@
 
   function filteredTripExpensesForMonth(month) {
     return (state.data.tripExpenses || [])
-      .filter((row) => isVisibleToCurrentUser(row, "tripExpense"))
+      .filter(isVisibleTrip)
       .filter((row) => monthFromDate(row.month_key || row.date) === month);
   }
 
@@ -239,7 +253,7 @@
 
   function monthlyIncome(month) {
     return (state.data.income || [])
-      .filter((row) => isVisibleToCurrentUser(row, "income"))
+      .filter(isVisibleIncome)
       .filter((row) => monthFromDate(row.month_key || row.date) === month)
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
   }
@@ -253,12 +267,14 @@
 
   function activeFixedCostsForMonth(month) {
     return (state.data.fixedCosts || [])
-      .filter((row) => isVisibleToCurrentUser(row, "fixedCost"))
+      .filter(isVisibleFixedCost)
       .filter((row) => {
-        const startMonth = row.start_month || "";
-        const endMonth = row.end_month || "";
+        const startMonth = monthFromDate(row.start_month || "");
+        const endMonth = monthFromDate(row.end_month || "");
+
         if (startMonth && month < startMonth) return false;
         if (endMonth && month > endMonth) return false;
+
         return true;
       });
   }
@@ -294,21 +310,21 @@
 
   function aggregateCategories(rows) {
     const map = new Map();
+
     rows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
       map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
     });
+
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
   function fillCategoryFilter() {
     if (!els.filterMainCategory) return;
 
-    const categories = [...new Set(
-      visibleCategories("Haushalt").map((row) => row.main_category)
-    )];
-
+    const categories = [...new Set(visibleCategories("Haushalt").map((row) => row.main_category))];
     const current = els.filterMainCategory.value;
+
     els.filterMainCategory.innerHTML =
       '<option value="">Alle</option>' +
       categories.map((cat) => `<option>${escapeHtml(cat)}</option>`).join("");
@@ -322,8 +338,8 @@
     if (!mainEl || !subEl) return;
 
     const rows = visibleCategories(module);
-
     const mains = [...new Set(rows.map((row) => row.main_category))];
+
     if (!selectedMain || !mains.includes(selectedMain)) {
       selectedMain = mains[0] || "";
     }
@@ -351,27 +367,103 @@
     populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory);
 
     els.bookingMainCategory?.addEventListener("change", () => {
-      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, els.bookingMainCategory.value);
+      populateCategorySelects(
+        "Haushalt",
+        els.bookingMainCategory,
+        els.bookingSubCategory,
+        els.bookingMainCategory.value
+      );
     });
 
     els.tripMainCategory?.addEventListener("change", () => {
-      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, els.tripMainCategory.value);
+      populateCategorySelects(
+        "Urlaub",
+        els.tripMainCategory,
+        els.tripSubCategory,
+        els.tripMainCategory.value
+      );
     });
 
     els.fixedMainCategory?.addEventListener("change", () => {
-      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, els.fixedMainCategory.value);
+      populateCategorySelects(
+        "Haushalt",
+        els.fixedMainCategory,
+        els.fixedSubCategory,
+        els.fixedMainCategory.value
+      );
     });
   }
 
   function populateTripSelect() {
     if (!els.tripExpenseTripId) return;
 
-    const rows = (state.data.trips || [])
-      .filter((row) => isVisibleToCurrentUser(row, "trip"));
+    const rows = (state.data.trips || []).filter(isVisibleTrip);
 
     els.tripExpenseTripId.innerHTML = rows
       .map((row) => `<option value="${escapeHtml(row.trip_id)}">${escapeHtml(row.title)} – ${escapeHtml(row.destination)}</option>`)
       .join("");
+  }
+
+  function getTransactionsForTable() {
+    const day = els.filterDay?.value || "";
+
+    let rows = (state.data.transactions || [])
+      .filter(isVisibleTransaction)
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
+    if (day) {
+      return rows.filter((row) => normalizeDateOnly(row.date) === day);
+    }
+
+    return rows.slice(0, 10);
+  }
+
+  function getTripsForTable() {
+    const months = new Set(monthRange());
+
+    return (state.data.trips || [])
+      .filter(isVisibleTrip)
+      .filter((row) => {
+        const startMonth = monthFromDate(row.start_date || "");
+        const endMonth = monthFromDate(row.end_date || "");
+        return months.has(startMonth) || months.has(endMonth);
+      })
+      .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
+  }
+
+  function getTripExpensesForTable() {
+    const months = new Set(monthRange());
+
+    return (state.data.tripExpenses || [])
+      .filter(isVisibleTrip)
+      .filter((row) => months.has(monthFromDate(row.month_key || row.date)))
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }
+
+  function getIncomeForTable() {
+    const months = monthRange().slice(-10);
+    const monthSet = new Set(months);
+
+    return (state.data.income || [])
+      .filter(isVisibleIncome)
+      .filter((row) => monthSet.has(monthFromDate(row.month_key || row.date)))
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }
+
+  function getAllVisibleCategoriesForTable() {
+    return visibleCategories("Haushalt")
+      .concat(visibleCategories("Urlaub"))
+      .sort((a, b) => {
+        const ka = `${a.module} ${a.main_category} ${a.sub_category}`;
+        const kb = `${b.module} ${b.main_category} ${b.sub_category}`;
+        return ka.localeCompare(kb);
+      });
+  }
+
+  function getAllVisibleFixedCostsForTable() {
+    return (state.data.fixedCosts || [])
+      .filter(isVisibleFixedCost)
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
   }
 
   function renderKpis(month, txRows, tripRows) {
@@ -389,7 +481,10 @@
     const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
     const topCategory = categoryAggregate.length ? categoryAggregate[0][0] : "—";
 
-    if (els.heroAvailable) els.heroAvailable.textContent = currency(available);
+    if (els.heroAvailable) {
+      els.heroAvailable.textContent = currency(available);
+    }
+
     if (els.heroAvailableSub) {
       els.heroAvailableSub.textContent = available >= 0 ? "Positiver Monatsüberschuss" : "Monat aktuell negativ";
     }
@@ -407,18 +502,23 @@
     }
 
     const balanceTarget = els.heroPeerBalance || els.heroJanaBalance;
-    if (balanceTarget) balanceTarget.textContent = currency(peerBalance);
-    if (els.heroPeerLabel) els.heroPeerLabel.textContent = `Saldo ${otherUserName()}`;
+    if (balanceTarget) {
+      balanceTarget.textContent = currency(peerBalance);
+    }
 
-    const items = [
-      ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-      ["Ausgaben gesamt", currency(totalExpenses), "Haushalt plus Urlaub"],
-      ["Fixkostenquote", percent(fixedRate), "Monatliche Fixkosten zum Einkommen"],
-      ["Ausgabenquote", percent(expenseRate), "Monatliche Ausgaben zum Einkommen"],
-      ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
-    ];
+    if (els.heroPeerLabel) {
+      els.heroPeerLabel.textContent = `Saldo ${otherUserName()}`;
+    }
 
     if (els.kpiGrid) {
+      const items = [
+        ["Einnahmen", currency(income), "Monatliche Einnahmen"],
+        ["Ausgaben gesamt", currency(totalExpenses), "Haushalt plus Urlaub"],
+        ["Fixkostenquote", percent(fixedRate), "Monatliche Fixkosten zum Einkommen"],
+        ["Ausgabenquote", percent(expenseRate), "Monatliche Ausgaben zum Einkommen"],
+        ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
+      ];
+
       els.kpiGrid.innerHTML = items.map(([label, value, sub]) => `
         <div class="kpi-card">
           <div class="kpi-label">${escapeHtml(label)}</div>
@@ -468,7 +568,9 @@
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: "#d8e4ff" } }
+        legend: {
+          labels: { color: "#d8e4ff" }
+        }
       },
       scales: {
         x: {
@@ -492,7 +594,10 @@
       plugins: {
         legend: {
           position: "bottom",
-          labels: { color: "#d8e4ff", boxWidth: 14 }
+          labels: {
+            color: "#d8e4ff",
+            boxWidth: 14
+          }
         }
       }
     };
@@ -501,7 +606,11 @@
   function ensureChart(name, canvasId, config) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === "undefined") return;
-    if (state.charts[name]) state.charts[name].destroy();
+
+    if (state.charts[name]) {
+      state.charts[name].destroy();
+    }
+
     state.charts[name] = new Chart(canvas, config);
   }
 
@@ -586,13 +695,15 @@
       : '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
   }
 
-  function renderTransactionsTable(rows) {
+  function renderTransactionsTable() {
     if (!els.transactionsTableBody) return;
+
+    const rows = getTransactionsForTable();
 
     els.transactionsTableBody.innerHTML = rows.length
       ? rows.map((row) => `
           <tr>
-            <td>${escapeHtml(row.date)}</td>
+            <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
@@ -606,14 +717,14 @@
   function renderTripsTable() {
     if (!els.tripsTableBody) return;
 
-    const rows = (state.data.trips || []).filter((row) => isVisibleToCurrentUser(row, "trip"));
+    const rows = getTripsForTable();
 
     els.tripsTableBody.innerHTML = rows.length
       ? rows.map((row) => `
           <tr>
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(row.destination)}</td>
-            <td>${escapeHtml(`${row.start_date} – ${row.end_date}`)}</td>
+            <td>${escapeHtml(`${normalizeDateOnly(row.start_date)} – ${normalizeDateOnly(row.end_date)}`)}</td>
             <td>${escapeHtml(currency(row.planned_budget))}</td>
             <td>${escapeHtml(row.status)}</td>
           </tr>
@@ -625,13 +736,13 @@
     if (!els.tripExpensesTableBody) return;
 
     const tripMap = new Map((state.data.trips || []).map((row) => [row.trip_id, row.title]));
-    const rows = filteredTripExpenses();
+    const rows = getTripExpensesForTable();
 
     els.tripExpensesTableBody.innerHTML = rows.length
       ? rows.map((row) => `
           <tr>
             <td>${escapeHtml(tripMap.get(row.trip_id) || row.trip_id)}</td>
-            <td>${escapeHtml(row.date)}</td>
+            <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
             <td>${escapeHtml(row.paid_by)}</td>
@@ -643,7 +754,7 @@
   function renderCategoriesTable() {
     if (!els.categoriesTableBody) return;
 
-    const rows = visibleCategories("Haushalt").concat(visibleCategories("Urlaub"));
+    const rows = getAllVisibleCategoriesForTable();
 
     els.categoriesTableBody.innerHTML = rows.length
       ? rows.map((row) => `
@@ -659,7 +770,7 @@
   function renderFixedCostsTable() {
     if (!els.fixedCostsTableBody) return;
 
-    const rows = (state.data.fixedCosts || []).filter((row) => isVisibleToCurrentUser(row, "fixedCost"));
+    const rows = getAllVisibleFixedCostsForTable();
 
     els.fixedCostsTableBody.innerHTML = rows.length
       ? rows.map((row) => `
@@ -676,12 +787,12 @@
   function renderIncomeTable() {
     if (!els.incomeTableBody) return;
 
-    const rows = (state.data.income || []).filter((row) => isVisibleToCurrentUser(row, "income"));
+    const rows = getIncomeForTable();
 
     els.incomeTableBody.innerHTML = rows.length
       ? rows.map((row) => `
           <tr>
-            <td>${escapeHtml(row.date)}</td>
+            <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.income_type)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
           </tr>
@@ -701,7 +812,7 @@
   function renderAll() {
     fillCategoryFilter();
     renderDashboard();
-    renderTransactionsTable(filteredTransactions());
+    renderTransactionsTable();
     renderTripsTable();
     renderTripExpensesTable();
     renderCategoriesTable();
@@ -824,7 +935,15 @@
   }
 
   function bindFilters() {
-    [els.filterEndMonth, els.filterPerson, els.filterMainCategory, els.rangeMonths, els.chartMode, els.compositionMode]
+    [
+      els.filterEndMonth,
+      els.filterDay,
+      els.filterPerson,
+      els.filterMainCategory,
+      els.rangeMonths,
+      els.chartMode,
+      els.compositionMode
+    ]
       .filter(Boolean)
       .forEach((element) => {
         element.addEventListener("change", renderAll);
@@ -833,19 +952,23 @@
     els.reloadBtn?.addEventListener("click", loadAll);
 
     els.fixedModeBtn?.addEventListener("click", () => {
-      state.fixedCostDisplayMode = state.fixedCostDisplayMode === "currency" ? "percent" : "currency";
-      els.fixedModeBtn.textContent = state.fixedCostDisplayMode === "currency" ? "€ anzeigen" : "% anzeigen";
+      state.fixedCostDisplayMode =
+        state.fixedCostDisplayMode === "currency" ? "percent" : "currency";
+      els.fixedModeBtn.textContent =
+        state.fixedCostDisplayMode === "currency" ? "€ anzeigen" : "% anzeigen";
       renderDashboard();
     });
   }
 
   function setupUiOnce() {
     if (state.initializedUi) return;
+
     setDefaultMonth();
     bindTabs();
     bindForms();
     bindFilters();
     wireCategorySelects();
+
     state.initializedUi = true;
   }
 
@@ -858,6 +981,7 @@
     await initAuth();
     const user = currentUser();
     if (!user) return;
+
     setupUiOnce();
     await loadAll();
   }
