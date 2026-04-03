@@ -1,5 +1,5 @@
 (() => {
-  const MASTER_START_MONTH = "2026-01";
+  const DEFAULT_START_MONTH = "2026-01";
   const DEFAULT_RANGE_MONTHS = 12;
 
   const state = {
@@ -18,9 +18,8 @@
 
   const els = {
     tabs: document.getElementById("tabs"),
-    filterEndMonth: document.getElementById("filterEndMonth") || document.getElementById("filterMonth"),
-    filterDay: document.getElementById("filterDay"),
-    filterPerson: document.getElementById("filterPerson"),
+    filterStartMonth: document.getElementById("filterStartMonth"),
+    filterAnalysisMonth: document.getElementById("filterAnalysisMonth"),
     filterMainCategory: document.getElementById("filterMainCategory"),
     rangeMonths: document.getElementById("rangeMonths"),
     chartMode: document.getElementById("chartMode"),
@@ -49,7 +48,6 @@
     heroAvailableSub: document.getElementById("heroAvailableSub"),
     heroFixedCosts: document.getElementById("heroFixedCosts"),
     heroFixedCostsSub: document.getElementById("heroFixedCostsSub"),
-    heroJanaBalance: document.getElementById("heroJanaBalance"),
     heroPeerBalance: document.getElementById("heroPeerBalance"),
     heroPeerLabel: document.getElementById("heroPeerLabel"),
 
@@ -143,8 +141,12 @@
     return (els.chartMode?.value || "currency") === "percent";
   }
 
-  function selectedHighlightMonth() {
-    return els.filterEndMonth?.value || currentMonth();
+  function selectedAnalysisMonth() {
+    return els.filterAnalysisMonth?.value || currentMonth();
+  }
+
+  function selectedStartMonth() {
+    return els.filterStartMonth?.value || DEFAULT_START_MONTH;
   }
 
   function showMessage(text, type = "error") {
@@ -211,8 +213,11 @@
   }
 
   function setDefaultMonth() {
-    if (els.filterEndMonth && !els.filterEndMonth.value) {
-      els.filterEndMonth.value = currentMonth();
+    if (els.filterStartMonth && !els.filterStartMonth.value) {
+      els.filterStartMonth.value = DEFAULT_START_MONTH;
+    }
+    if (els.filterAnalysisMonth && !els.filterAnalysisMonth.value) {
+      els.filterAnalysisMonth.value = currentMonth();
     }
     if (els.rangeMonths && !els.rangeMonths.value) {
       els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
@@ -232,7 +237,7 @@
     const count = Number(els.rangeMonths?.value || DEFAULT_RANGE_MONTHS);
     const months = [];
 
-    const [startYear, startMonth] = MASTER_START_MONTH.split("-").map(Number);
+    const [startYear, startMonth] = selectedStartMonth().split("-").map(Number);
     const startDate = new Date(startYear, startMonth - 1, 1);
 
     for (let i = 0; i < count; i += 1) {
@@ -343,8 +348,7 @@
   }
 
   function filteredTransactions() {
-    const month = selectedHighlightMonth();
-    return filteredTransactionsForMonth(month);
+    return filteredTransactionsForMonth(selectedAnalysisMonth());
   }
 
   function filteredTripExpensesForMonth(month) {
@@ -354,8 +358,7 @@
   }
 
   function filteredTripExpenses() {
-    const month = selectedHighlightMonth();
-    return filteredTripExpensesForMonth(month);
+    return filteredTripExpensesForMonth(selectedAnalysisMonth());
   }
 
   function monthlyIncome(month) {
@@ -724,7 +727,7 @@
           { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
         ];
 
-    const highlightMonth = selectedHighlightMonth();
+    const highlightMonth = selectedAnalysisMonth();
 
     ensureChart("masterChart", "masterChart", {
       type: "line",
@@ -1008,7 +1011,7 @@
   }
 
   function renderDashboard() {
-    const month = selectedHighlightMonth();
+    const month = selectedAnalysisMonth();
     const txRows = filteredTransactions();
     const tripRows = filteredTripExpenses();
     const metrics = renderKpis(month, txRows, tripRows);
@@ -1427,7 +1430,8 @@
 
   function bindFilters() {
     [
-      els.filterEndMonth,
+      els.filterStartMonth,
+      els.filterAnalysisMonth,
       els.filterMainCategory,
       els.rangeMonths,
       els.chartMode,
