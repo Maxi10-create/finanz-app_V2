@@ -256,21 +256,39 @@
     return String(row.visible_to_other || "").toLowerCase() === "ja";
   }
 
-  function getCurrentUserAmount(row) {
-    const amount = Number(row.amount || 0);
-    const splitPercent = Number(row.split_percent || 50);
+  function getUserShareFromAmount(row, baseAmount) {
+    const amount = Number(baseAmount || 0);
+    const splitPercent = Number(row.split_percent || 100);
     const owner = row.owner_user || "";
     const me = currentUserName();
 
-    if (owner === me) {
-      return amount * (splitPercent / 100);
-    }
+    const ownerShare = amount * (splitPercent / 100);
+    const otherShare = amount - ownerShare;
+
+    if (owner === me) return ownerShare;
 
     if (String(row.visible_to_other || "").toLowerCase() === "ja") {
-      return amount * ((100 - splitPercent) / 100);
+      return otherShare;
     }
 
     return 0;
+  }
+
+  function getCurrentUserAmount(row) {
+    return getUserShareFromAmount(row, row.amount);
+  }
+
+  function getOtherUserAmount(row) {
+    const amount = Number(row.amount || 0);
+    const splitPercent = Number(row.split_percent || 100);
+    const owner = row.owner_user || "";
+    const me = currentUserName();
+
+    const ownerShare = amount * (splitPercent / 100);
+    const otherShare = amount - ownerShare;
+
+    if (owner === me) return otherShare;
+    return ownerShare;
   }
 
   function filteredTransactionsForMonth(month) {
@@ -330,27 +348,36 @@
 
   function fixedCostsMonthlyTotal(month) {
     return activeFixedCostsForMonth(month).reduce(
-      (sum, row) => sum + normalizeFrequency(row.amount, row.frequency),
+      (sum, row) => sum + getUserShareFromAmount(row, normalizeFrequency(row.amount, row.frequency)),
       0
     );
   }
 
   function calculatePeerBalance(rows) {
     const me = currentUserName();
-    const other = otherUserName();
     let balance = 0;
 
     rows.forEach((row) => {
       const amount = Number(row.amount || 0);
-      const splitPercent = Number(row.split_percent || 50);
+      const splitPercent = Number(row.split_percent || 100);
+      const owner = row.owner_user || "";
+      const paidBy = row.paid_by || "";
 
-      const myShare = amount * (splitPercent / 100);
-      const otherShare = amount - myShare;
+      const ownerShare = amount * (splitPercent / 100);
+      const otherShare = amount - ownerShare;
 
-      if (row.paid_by === me) {
-        balance += otherShare;
-      } else if (row.paid_by === other) {
-        balance -= myShare;
+      if (owner === me) {
+        if (paidBy === me) {
+          balance += otherShare;
+        } else {
+          balance -= ownerShare;
+        }
+      } else {
+        if (paidBy === me) {
+          balance += ownerShare;
+        } else {
+          balance -= otherShare;
+        }
       }
     });
 
@@ -514,8 +541,8 @@
     const txTotal = txRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
     const tripTotal = tripRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
     const fixedCosts = fixedCostsMonthlyTotal(month);
-    const totalExpenses = txTotal + tripTotal;
-    const variableCosts = Math.max(totalExpenses - fixedCosts, 0);
+    const totalExpenses = txTotal + tripTotal + fixedCosts;
+    const variableCosts = txTotal + tripTotal;
     const available = income - totalExpenses;
     const savingsRate = income ? (available / income) * 100 : 0;
     const fixedRate = income ? (fixedCosts / income) * 100 : 0;
@@ -548,7 +575,7 @@
     if (els.kpiGrid) {
       const items = [
         ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-        ["Ausgaben gesamt", currency(totalExpenses), "Haushalt plus Urlaub"],
+        ["Ausgaben gesamt", currency(totalExpenses), "Haushalt + Urlaub + Fixkosten"],
         ["Fixkostenquote", percent(fixedRate), "Monatliche Fixkosten zum Einkommen"],
         ["Ausgabenquote", percent(expenseRate), "Monatliche Ausgaben zum Einkommen"],
         ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
@@ -631,14 +658,15 @@
     const months = monthRange();
 
     const incomeSeries = months.map((m) => monthlyIncome(m));
-    const totalExpenseSeries = months.map((m) => {
+
+    const variableSeries = months.map((m) => {
       const tx = filteredTransactionsForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
       const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
       return tx + trip;
     });
 
     const fixedSeries = months.map((m) => fixedCostsMonthlyTotal(m));
-    const variableSeries = totalExpenseSeries.map((val, i) => Math.max(val - fixedSeries[i], 0));
+    const totalExpenseSeries = variableSeries.map((val, i) => val + fixedSeries[i]);
 
     ensureChart("masterChart", "masterChart", {
       type: "line",
@@ -686,7 +714,8 @@
     const fixedAgg = new Map();
     fixedMonthRows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
-      fixedAgg.set(key, (fixedAgg.get(key) || 0) + normalizeFrequency(row.amount, row.frequency));
+      const share = getUserShareFromAmount(row, normalizeFrequency(row.amount, row.frequency));
+      fixedAgg.set(key, (fixedAgg.get(key) || 0) + share);
     });
 
     if (els.fixedCompositionLabel) {
@@ -838,7 +867,7 @@
       ? rows.map((row) => `
           <tr>
             <td>${escapeHtml(row.title)}</td>
-            <td>${escapeHtml(currency(row.amount))}</td>
+            <td>${escapeHtml(currency(getUserShareFromAmount(row, row.amount)))}</td>
             <td>${escapeHtml(row.frequency)}</td>
             <td>${actionButtons("fixedCost", row.id)}</td>
           </tr>
@@ -954,6 +983,8 @@
       editState.transaction = null;
       els.transactionForm?.reset();
       setDefaultMonth();
+      const splitField = els.transactionForm?.elements.namedItem("split_percent");
+      if (splitField) splitField.value = "100";
       if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
       if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
       if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "none";
@@ -974,6 +1005,8 @@
       editState.tripExpense = null;
       els.tripExpenseForm?.reset();
       setDefaultMonth();
+      const splitField = els.tripExpenseForm?.elements.namedItem("split_percent");
+      if (splitField) splitField.value = "100";
       if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Neue Urlaubsausgabe";
       if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Urlaubsausgabe speichern";
       if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "none";
@@ -994,6 +1027,8 @@
     if (type === "fixedCost") {
       editState.fixedCost = null;
       els.fixedCostForm?.reset();
+      const splitField = els.fixedCostForm?.elements.namedItem("split_percent");
+      if (splitField) splitField.value = "100";
       if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Neue Fixkostenposition";
       if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Fixkosten speichern";
       if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "none";
