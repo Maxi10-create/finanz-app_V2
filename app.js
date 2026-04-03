@@ -337,6 +337,23 @@
     return balance;
   }
 
+  function getCurrentUserAmount(row) {
+    const amount = Number(row.amount || 0);
+    const splitPercent = Number(row.split_percent || 50);
+    const owner = row.owner_user || "";
+    const me = currentUserName();
+
+    if (owner === me) {
+    return amount * (splitPercent / 100);
+    }
+
+    if (String(row.visible_to_other || "").toLowerCase() === "ja") {
+    return amount * ((100 - splitPercent) / 100);
+    }
+
+    return 0;
+  }
+
   function aggregateCategories(rows) {
     const map = new Map();
     rows.forEach((row) => {
