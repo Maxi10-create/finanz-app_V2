@@ -234,3 +234,12 @@ canvas{width:100%!important;max-height:320px}
   .sidebar{border-right:none;border-bottom:1px solid var(--line)}
   .hero-grid,.chart-grid,.split-grid,.two-col,.three-col,.form-grid,.compact-form,.login-user-grid{grid-template-columns:1fr}
 }
+.table-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.btn-xs{
+  padding:6px 10px;
+  font-size:12px;
+}
