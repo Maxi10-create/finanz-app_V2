@@ -16,12 +16,13 @@ function doGet(e) {
     const action = String((e && e.parameter && e.parameter.action) || 'getAll').toLowerCase();
 
     if (action === 'ping') {
-      return jsonResponse({ success: true, message: 'API erreichbar' });
+      return jsonResponse({ success: true, message: 'API erreichbar', version: API_VERSION });
     }
 
     if (action === 'getall') {
       return jsonResponse({
         success: true,
+        version: API_VERSION,
         data: {
           income: readSheetObjects_(SHEETS.INCOME),
           transactions: readSheetObjects_(SHEETS.TRANSACTIONS),
