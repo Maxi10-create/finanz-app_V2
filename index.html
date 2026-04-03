@@ -45,11 +45,13 @@
       </nav>
 
       <section class="side-card">
-        <h3>Zeitraum & Filter</h3>
+        <h3>Zeitraum &amp; Filter</h3>
+
         <label>
           Endmonat
           <input type="month" id="filterEndMonth" />
         </label>
+
         <label>
           Zeitraum (Monate)
           <select id="rangeMonths">
@@ -60,12 +62,19 @@
             <option value="36">36</option>
           </select>
         </label>
+
+        <label>
+          Tag
+          <input type="date" id="filterDay" />
+        </label>
+
         <label>
           Kategorie-Detail
           <select id="filterMainCategory">
             <option value="">Alle</option>
           </select>
         </label>
+
         <label>
           Kostenanzeige
           <select id="chartMode">
@@ -73,6 +82,7 @@
             <option value="percent">% vom Einkommen</option>
           </select>
         </label>
+
         <label>
           Zusammensetzung
           <select id="compositionMode">
@@ -81,6 +91,7 @@
             <option value="total">Gesamt</option>
           </select>
         </label>
+
         <button id="reloadBtn" class="btn btn-primary btn-full">Daten neu laden</button>
         <div id="syncStatus" class="sync-status">Noch nicht synchronisiert</div>
       </section>
@@ -261,6 +272,7 @@
             <div class="card-header">
               <div>
                 <h2>Haushaltsbuchungen</h2>
+                <p>Standard: letzte 10 Buchungen. Mit Tagesfilter werden alle Buchungen des gewählten Tages angezeigt.</p>
               </div>
             </div>
             <table class="data-table" id="transactionsTable">
@@ -375,6 +387,7 @@
               <div class="card-header">
                 <div>
                   <h2>Reisen</h2>
+                  <p>Anzeige auf Basis des gewählten Zeitraums.</p>
                 </div>
               </div>
               <table class="data-table" id="tripsTable">
@@ -389,6 +402,7 @@
               <div class="card-header">
                 <div>
                   <h2>Urlaubsausgaben</h2>
+                  <p>Anzeige auf Basis des gewählten Zeitraums.</p>
                 </div>
               </div>
               <table class="data-table" id="tripExpensesTable">
