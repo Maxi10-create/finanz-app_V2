@@ -1,3 +1,4 @@
+const API_VERSION = 'v2-2026-04-03-01';
 const USER_NAME = 'Hofer Maximilian';
 const OTHER_PERSON = 'Jana March';
 
