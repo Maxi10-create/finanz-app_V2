@@ -88,8 +88,15 @@ function doPost(e) {
     }
 
     if (action === 'addtransaction') {
-      appendObjectByHeaders_(SHEETS.TRANSACTIONS, normalizeTransactionPayload_(payload));
-      return jsonResponse({ success: true, version: API_VERSION });
+      const normalized = normalizeTransactionPayload_(payload);
+
+      return jsonResponse({
+        success: true,
+        version: API_VERSION,
+        debug: true,
+        received_payload: payload,
+        normalized_payload: normalized
+      });
     }
 
     if (action === 'addtrip') {
