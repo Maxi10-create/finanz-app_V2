@@ -1,7 +1,6 @@
 (() => {
   const state = {
     activeApiBaseUrl: null,
-    fixedCostDisplayMode: "currency",
     charts: {},
     initializedUi: false,
     data: {
@@ -25,11 +24,12 @@
     compositionMode: document.getElementById("compositionMode"),
     reloadBtn: document.getElementById("reloadBtn"),
     syncStatus: document.getElementById("syncStatus"),
-    fixedModeBtn: document.getElementById("fixedModeBtn"),
     messageBox: document.getElementById("messageBox"),
+
     kpiGrid: document.getElementById("kpiGrid"),
     monthlySummary: document.getElementById("monthlySummary"),
     insightList: document.getElementById("insightList"),
+
     categoryTableBody: document.querySelector("#categoryTable tbody"),
     transactionsTableBody: document.querySelector("#transactionsTable tbody"),
     tripsTableBody: document.querySelector("#tripsTable tbody"),
@@ -37,6 +37,11 @@
     categoriesTableBody: document.querySelector("#categoriesTable tbody"),
     fixedCostsTableBody: document.querySelector("#fixedCostsTable tbody"),
     incomeTableBody: document.querySelector("#incomeTable tbody"),
+
+    monthOverviewTableBody: document.querySelector("#monthOverviewTable tbody"),
+    rangeOverviewTableBody: document.querySelector("#rangeOverviewTable tbody"),
+    categoryCompareTableBody: document.querySelector("#categoryCompareTable tbody"),
+
     heroAvailable: document.getElementById("heroAvailable"),
     heroAvailableSub: document.getElementById("heroAvailableSub"),
     heroFixedCosts: document.getElementById("heroFixedCosts"),
@@ -44,6 +49,7 @@
     heroJanaBalance: document.getElementById("heroJanaBalance"),
     heroPeerBalance: document.getElementById("heroPeerBalance"),
     heroPeerLabel: document.getElementById("heroPeerLabel"),
+
     bookingMainCategory: document.getElementById("bookingMainCategory"),
     bookingSubCategory: document.getElementById("bookingSubCategory"),
     tripMainCategory: document.getElementById("tripMainCategory"),
@@ -101,6 +107,10 @@
 
   const percent = (value) => `${Number(value || 0).toFixed(1)} %`;
 
+  function toPercent(value, income) {
+    return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
+  }
+
   const escapeHtml = (value) =>
     String(value ?? "").replace(/[&<>"']/g, (m) => ({
       "&": "&amp;",
@@ -124,6 +134,10 @@
 
   function otherUserName() {
     return currentUserName() === "Jana March" ? "Hofer Maximilian" : "Jana March";
+  }
+
+  function isPercentMode() {
+    return (els.chartMode?.value || "currency") === "percent";
   }
 
   function showMessage(text, type = "error") {
@@ -258,16 +272,21 @@
 
   function getUserShareFromAmount(row, baseAmount) {
     const amount = Number(baseAmount || 0);
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     const splitPercent = Number(row.split_percent || 100);
     const owner = row.owner_user || "";
     const me = currentUserName();
+
+    if (!splitEnabled) {
+      return owner === me ? amount : 0;
+    }
 
     const ownerShare = amount * (splitPercent / 100);
     const otherShare = amount - ownerShare;
 
     if (owner === me) return ownerShare;
 
-    if (String(row.visible_to_other || "").toLowerCase() === "ja") {
+    if (String(row.visible_to_other || "").toLowerCase() === "ja" || !("visible_to_other" in row)) {
       return otherShare;
     }
 
@@ -280,9 +299,14 @@
 
   function getOtherUserAmount(row) {
     const amount = Number(row.amount || 0);
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     const splitPercent = Number(row.split_percent || 100);
     const owner = row.owner_user || "";
     const me = currentUserName();
+
+    if (!splitEnabled) {
+      return owner === me ? 0 : amount;
+    }
 
     const ownerShare = amount * (splitPercent / 100);
     const otherShare = amount - ownerShare;
@@ -359,9 +383,12 @@
 
     rows.forEach((row) => {
       const amount = Number(row.amount || 0);
+      const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
       const splitPercent = Number(row.split_percent || 100);
       const owner = row.owner_user || "";
       const paidBy = row.paid_by || "";
+
+      if (!splitEnabled) return;
 
       const ownerShare = amount * (splitPercent / 100);
       const otherShare = amount - ownerShare;
@@ -550,22 +577,22 @@
     const peerBalance = calculatePeerBalance(txRows.concat(tripRows));
     const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
     const topCategory = categoryAggregate.length ? categoryAggregate[0][0] : "—";
+    const percentMode = isPercentMode();
 
-    if (els.heroAvailable) els.heroAvailable.textContent = currency(available);
+    if (els.heroAvailable) {
+      els.heroAvailable.textContent = percentMode ? percent(toPercent(available, income)) : currency(available);
+    }
     if (els.heroAvailableSub) {
       els.heroAvailableSub.textContent = available >= 0 ? "Positiver Monatsüberschuss" : "Monat aktuell negativ";
     }
 
     if (els.heroFixedCosts) {
-      els.heroFixedCosts.textContent =
-        state.fixedCostDisplayMode === "percent" ? percent(fixedRate) : currency(fixedCosts);
+      els.heroFixedCosts.textContent = percentMode ? percent(fixedRate) : currency(fixedCosts);
     }
 
     if (els.heroFixedCostsSub) {
       els.heroFixedCostsSub.textContent =
-        state.fixedCostDisplayMode === "percent"
-          ? "Fixkostenquote bezogen auf Einkommen"
-          : "Monatliche Fixkostenbelastung";
+        percentMode ? "Fixkostenquote bezogen auf Einkommen" : "Monatliche Fixkostenbelastung";
     }
 
     const balanceTarget = els.heroPeerBalance || els.heroJanaBalance;
@@ -573,13 +600,21 @@
     if (els.heroPeerLabel) els.heroPeerLabel.textContent = `Saldo ${otherUserName()}`;
 
     if (els.kpiGrid) {
-      const items = [
-        ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-        ["Ausgaben gesamt", currency(totalExpenses), "Haushalt + Urlaub + Fixkosten"],
-        ["Fixkostenquote", percent(fixedRate), "Monatliche Fixkosten zum Einkommen"],
-        ["Ausgabenquote", percent(expenseRate), "Monatliche Ausgaben zum Einkommen"],
-        ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
-      ];
+      const items = percentMode
+        ? [
+            ["Einnahmen", currency(income), "Monatliche Einnahmen"],
+            ["Ausgaben gesamt", percent(expenseRate), "Haushalt + Urlaub + Fixkosten"],
+            ["Fixkostenquote", percent(fixedRate), "Monatliche Fixkosten zum Einkommen"],
+            ["Variable Kosten", percent(toPercent(variableCosts, income)), "Variable Kosten zum Einkommen"],
+            ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
+          ]
+        : [
+            ["Einnahmen", currency(income), "Monatliche Einnahmen"],
+            ["Ausgaben gesamt", currency(totalExpenses), "Haushalt + Urlaub + Fixkosten"],
+            ["Fixkosten", currency(fixedCosts), "Monatliche Fixkosten"],
+            ["Variable Kosten", currency(variableCosts), "Haushalt + Urlaub"],
+            ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
+          ];
 
       els.kpiGrid.innerHTML = items.map(([label, value, sub]) => `
         <div class="kpi-card">
@@ -593,11 +628,11 @@
     if (els.monthlySummary) {
       els.monthlySummary.innerHTML = [
         ["Monat", month],
-        ["Haushaltsausgaben", currency(txTotal)],
-        ["Urlaubsausgaben", currency(tripTotal)],
-        ["Fixkosten (monatl.)", currency(fixedCosts)],
-        ["Variable Kosten", currency(variableCosts)],
-        ["Überschuss", currency(available)]
+        ["Haushaltsausgaben", percentMode ? percent(toPercent(txTotal, income)) : currency(txTotal)],
+        ["Urlaubsausgaben", percentMode ? percent(toPercent(tripTotal, income)) : currency(tripTotal)],
+        ["Fixkosten (monatl.)", percentMode ? percent(fixedRate) : currency(fixedCosts)],
+        ["Variable Kosten", percentMode ? percent(toPercent(variableCosts, income)) : currency(variableCosts)],
+        ["Überschuss", percentMode ? percent(toPercent(available, income)) : currency(available)]
       ].map(([k, v]) => `
         <div class="summary-row">
           <div class="key">${escapeHtml(k)}</div>
@@ -613,7 +648,7 @@
         ["Fixkosten aktiv", `${activeFixedCostsForMonth(month).length} Positionen`],
         ["Haushaltstransaktionen", `${txRows.length}`],
         ["Urlaubstransaktionen", `${tripRows.length}`],
-        ["Verfügbare Mittel", currency(available)]
+        ["Verfügbare Mittel", percentMode ? percent(toPercent(available, income)) : currency(available)]
       ].map(([k, v]) => `
         <div class="summary-row">
           <div class="key">${escapeHtml(k)}</div>
@@ -656,23 +691,59 @@
 
   function renderCharts(month, txRows, tripRows, metrics) {
     const months = monthRange();
+    const percentMode = isPercentMode();
 
     const incomeSeries = months.map((m) => monthlyIncome(m));
 
-    const variableSeries = months.map((m) => {
+    const variableSeriesRaw = months.map((m) => {
       const tx = filteredTransactionsForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
       const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
       return tx + trip;
     });
 
-    const fixedSeries = months.map((m) => fixedCostsMonthlyTotal(m));
-    const totalExpenseSeries = variableSeries.map((val, i) => val + fixedSeries[i]);
+    const fixedSeriesRaw = months.map((m) => fixedCostsMonthlyTotal(m));
+    const totalExpenseSeriesRaw = variableSeriesRaw.map((val, i) => val + fixedSeriesRaw[i]);
 
-    ensureChart("masterChart", "masterChart", {
-      type: "line",
-      data: {
-        labels: months,
-        datasets: [
+    const fixedSeries = percentMode
+      ? fixedSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i]))
+      : fixedSeriesRaw;
+
+    const variableSeries = percentMode
+      ? variableSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i]))
+      : variableSeriesRaw;
+
+    const totalExpenseSeries = percentMode
+      ? totalExpenseSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i]))
+      : totalExpenseSeriesRaw;
+
+    const datasets = percentMode
+      ? [
+          {
+            label: "Totale Kosten",
+            data: totalExpenseSeries,
+            borderColor: "#4f7cff",
+            backgroundColor: "rgba(79,124,255,.15)",
+            fill: false,
+            tension: 0.25
+          },
+          {
+            label: "Fixkosten",
+            data: fixedSeries,
+            borderColor: "#ffbe3d",
+            backgroundColor: "rgba(255,190,61,.15)",
+            fill: false,
+            tension: 0.25
+          },
+          {
+            label: "Variable Kosten",
+            data: variableSeries,
+            borderColor: "#ff6d7a",
+            backgroundColor: "rgba(255,109,122,.15)",
+            fill: false,
+            tension: 0.25
+          }
+        ]
+      : [
           {
             label: "Einnahmen",
             data: incomeSeries,
@@ -705,7 +776,13 @@
             fill: false,
             tension: 0.25
           }
-        ]
+        ];
+
+    ensureChart("masterChart", "masterChart", {
+      type: "line",
+      data: {
+        labels: months,
+        datasets
       },
       options: chartOptions()
     });
@@ -727,8 +804,8 @@
       data: {
         labels: [...fixedAgg.keys()],
         datasets: [{
-          label: "Fixkosten",
-          data: [...fixedAgg.values()],
+          label: percentMode ? "Fixkosten %" : "Fixkosten",
+          data: [...fixedAgg.values()].map((v) => percentMode ? toPercent(v, metrics.income) : v),
           backgroundColor: "rgba(255,190,61,.82)"
         }]
       },
@@ -751,8 +828,8 @@
       data: {
         labels: [...variableAgg.keys()],
         datasets: [{
-          label: "Variable Kosten",
-          data: [...variableAgg.values()],
+          label: percentMode ? "Variable Kosten %" : "Variable Kosten",
+          data: [...variableAgg.values()].map((v) => percentMode ? toPercent(v, metrics.income) : v),
           backgroundColor: "rgba(79,124,255,.82)"
         }]
       },
@@ -764,8 +841,8 @@
       data: {
         labels: metrics.categoryAggregate.map((row) => row[0]),
         datasets: [{
-          label: "Kosten",
-          data: metrics.categoryAggregate.map((row) => row[1]),
+          label: percentMode ? "Kosten %" : "Kosten",
+          data: metrics.categoryAggregate.map((row) => percentMode ? toPercent(row[1], metrics.income) : row[1]),
           backgroundColor: "rgba(97,201,255,.82)"
         }]
       },
@@ -785,6 +862,99 @@
             <td>${escapeHtml(name)}</td>
             <td>${escapeHtml(currency(amount))}</td>
             <td>${escapeHtml(percent((amount / total) * 100))}</td>
+          </tr>
+        `).join("")
+      : '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
+  }
+
+  function renderMonthOverviewTable(metrics) {
+    if (!els.monthOverviewTableBody) return;
+
+    const percentMode = isPercentMode();
+    const income = metrics.income || 0;
+
+    const rows = [
+      ["Einnahmen", percentMode ? "100,0 %" : currency(metrics.income)],
+      ["Haushalt", percentMode ? percent(toPercent(metrics.txTotal, income)) : currency(metrics.txTotal)],
+      ["Urlaub", percentMode ? percent(toPercent(metrics.tripTotal, income)) : currency(metrics.tripTotal)],
+      ["Fixkosten", percentMode ? percent(toPercent(metrics.fixedCosts, income)) : currency(metrics.fixedCosts)],
+      ["Variable Kosten", percentMode ? percent(toPercent(metrics.variableCosts, income)) : currency(metrics.variableCosts)],
+      ["Gesamtausgaben", percentMode ? percent(toPercent(metrics.totalExpenses, income)) : currency(metrics.totalExpenses)],
+      ["Überschuss", percentMode ? percent(toPercent(metrics.available, income)) : currency(metrics.available)]
+    ];
+
+    els.monthOverviewTableBody.innerHTML = rows.map(([label, value]) => `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td>${escapeHtml(value)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderRangeOverviewTable() {
+    if (!els.rangeOverviewTableBody) return;
+
+    const months = monthRange();
+
+    const income = months.reduce((sum, m) => sum + monthlyIncome(m), 0);
+    const txTotal = months.reduce((sum, m) => {
+      return sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0);
+    }, 0);
+
+    const tripTotal = months.reduce((sum, m) => {
+      return sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0);
+    }, 0);
+
+    const fixedCosts = months.reduce((sum, m) => sum + fixedCostsMonthlyTotal(m), 0);
+    const variableCosts = txTotal + tripTotal;
+    const totalExpenses = variableCosts + fixedCosts;
+    const available = income - totalExpenses;
+
+    const percentMode = isPercentMode();
+
+    const rows = [
+      ["Einnahmen", percentMode ? "100,0 %" : currency(income)],
+      ["Haushalt", percentMode ? percent(toPercent(txTotal, income)) : currency(txTotal)],
+      ["Urlaub", percentMode ? percent(toPercent(tripTotal, income)) : currency(tripTotal)],
+      ["Fixkosten", percentMode ? percent(toPercent(fixedCosts, income)) : currency(fixedCosts)],
+      ["Variable Kosten", percentMode ? percent(toPercent(variableCosts, income)) : currency(variableCosts)],
+      ["Gesamtausgaben", percentMode ? percent(toPercent(totalExpenses, income)) : currency(totalExpenses)],
+      ["Überschuss", percentMode ? percent(toPercent(available, income)) : currency(available)]
+    ];
+
+    els.rangeOverviewTableBody.innerHTML = rows.map(([label, value]) => `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td>${escapeHtml(value)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderCategoryCompareTable(month, txRows, tripRows) {
+    if (!els.categoryCompareTableBody) return;
+
+    const monthAgg = new Map();
+    aggregateCategories(txRows.concat(tripRows)).forEach(([key, value]) => monthAgg.set(key, value));
+
+    const rangeAgg = new Map();
+    monthRange().forEach((m) => {
+      const rows = filteredTransactionsForMonth(m).concat(filteredTripExpensesForMonth(m));
+      aggregateCategories(rows).forEach(([key, value]) => {
+        rangeAgg.set(key, (rangeAgg.get(key) || 0) + value);
+      });
+    });
+
+    const keys = [...new Set([...monthAgg.keys(), ...rangeAgg.keys()])].sort();
+    const percentMode = isPercentMode();
+    const monthIncome = monthlyIncome(month);
+    const rangeIncome = monthRange().reduce((sum, m) => sum + monthlyIncome(m), 0);
+
+    els.categoryCompareTableBody.innerHTML = keys.length
+      ? keys.map((key) => `
+          <tr>
+            <td>${escapeHtml(key)}</td>
+            <td>${escapeHtml(percentMode ? percent(toPercent(monthAgg.get(key) || 0, monthIncome)) : currency(monthAgg.get(key) || 0))}</td>
+            <td>${escapeHtml(percentMode ? percent(toPercent(rangeAgg.get(key) || 0, rangeIncome)) : currency(rangeAgg.get(key) || 0))}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
@@ -896,8 +1066,12 @@
     const txRows = filteredTransactions();
     const tripRows = filteredTripExpenses();
     const metrics = renderKpis(month, txRows, tripRows);
+
     renderCharts(month, txRows, tripRows, metrics);
     renderCategoryTable(txRows.concat(tripRows));
+    renderMonthOverviewTable(metrics);
+    renderRangeOverviewTable();
+    renderCategoryCompareTable(month, txRows, tripRows);
   }
 
   function renderAll() {
@@ -984,7 +1158,9 @@
       els.transactionForm?.reset();
       setDefaultMonth();
       const splitField = els.transactionForm?.elements.namedItem("split_percent");
+      const splitEnabledField = els.transactionForm?.elements.namedItem("split_enabled");
       if (splitField) splitField.value = "100";
+      if (splitEnabledField) splitEnabledField.value = "nein";
       if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
       if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
       if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "none";
@@ -1006,7 +1182,9 @@
       els.tripExpenseForm?.reset();
       setDefaultMonth();
       const splitField = els.tripExpenseForm?.elements.namedItem("split_percent");
+      const splitEnabledField = els.tripExpenseForm?.elements.namedItem("split_enabled");
       if (splitField) splitField.value = "100";
+      if (splitEnabledField) splitEnabledField.value = "nein";
       if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Neue Urlaubsausgabe";
       if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Urlaubsausgabe speichern";
       if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "none";
@@ -1028,7 +1206,9 @@
       editState.fixedCost = null;
       els.fixedCostForm?.reset();
       const splitField = els.fixedCostForm?.elements.namedItem("split_percent");
+      const splitEnabledField = els.fixedCostForm?.elements.namedItem("split_enabled");
       if (splitField) splitField.value = "100";
+      if (splitEnabledField) splitEnabledField.value = "nein";
       if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Neue Fixkostenposition";
       if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Fixkosten speichern";
       if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "none";
