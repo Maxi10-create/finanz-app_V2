@@ -1,4 +1,4 @@
-const API_VERSION = 'v5-2026-04-03-split-enabled';
+const API_VERSION = 'v6-2026-04-03-settlement-booking';
 
 const SHEETS = {
   INCOME: 'Income',
@@ -15,7 +15,7 @@ const SCHEMAS = {
     'created_at','updated_at','created_by','updated_by','owner_user','is_deleted'
   ],
   [SHEETS.TRANSACTIONS]: [
-    'id','date','month_key','module','title','main_category','sub_category','amount',
+    'id','date','month_key','module','booking_type','counterparty','title','main_category','sub_category','amount',
     'paid_by','split_enabled','split_percent','payment_type','status','note',
     'created_at','updated_at','created_by','updated_by','owner_user','visible_to_other','is_deleted'
   ],
@@ -238,7 +238,6 @@ function readSheetObjects_(sheetName) {
 function appendBySchema_(sheetName, payload) {
   const sheet = forceSchema_(sheetName);
   const schema = SCHEMAS[sheetName];
-
   const row = schema.map((field) => payload[field] != null ? payload[field] : '');
   sheet.appendRow(row);
 
@@ -329,6 +328,22 @@ function normalizeTransactionPayload_(payload, isUpdate) {
 
   if (obj.date && !obj.month_key) {
     obj.month_key = normalizeMonthKey_(obj.date);
+  }
+
+  if (obj.booking_type == null || obj.booking_type === '') obj.booking_type = 'expense';
+  if (obj.counterparty == null) obj.counterparty = '';
+
+  if (obj.booking_type === 'settlement') {
+    if (obj.main_category == null || obj.main_category === '') obj.main_category = 'Verrechnung';
+    if (obj.sub_category == null || obj.sub_category === '') obj.sub_category = 'Saldoausgleich';
+    if (obj.split_enabled == null || obj.split_enabled === '') obj.split_enabled = 'nein';
+    if (obj.split_percent == null || obj.split_percent === '') obj.split_percent = '100';
+    if (obj.visible_to_other == null || obj.visible_to_other === '') obj.visible_to_other = 'nein';
+    if (obj.payment_type == null) obj.payment_type = '';
+    if (obj.status == null || obj.status === '') obj.status = 'bezahlt';
+    if (obj.note == null) obj.note = '';
+    if (obj.is_deleted == null) obj.is_deleted = '';
+    return obj;
   }
 
   if (obj.split_enabled == null || obj.split_enabled === '') obj.split_enabled = 'nein';
