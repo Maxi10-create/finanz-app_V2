@@ -128,7 +128,7 @@
           <div class="hero-card">
             <div class="hero-label">Saldo anderer Nutzer</div>
             <div class="hero-value" id="heroPeerBalance">0,00 €</div>
-            <div class="hero-sub" id="heroPeerLabel">Gemeinsame Verrechnung</div>
+            <div class="hero-sub" id="heroPeerLabel">Saldo Jana March</div>
           </div>
         </div>
 
@@ -138,7 +138,7 @@
           <div class="card-header">
             <div>
               <h2>Master Chart</h2>
-              <p>Startet ab dem gewählten Startmonat. Der Analysemonat wird hervorgehoben.</p>
+              <p>Chart startet ab Startmonat. Analysemonat wird hervorgehoben.</p>
             </div>
           </div>
           <canvas id="masterChart"></canvas>
@@ -170,7 +170,7 @@
           <div class="card-header">
             <div>
               <h2>Kostenaufteilung pro Kategorie</h2>
-              <p>Bei Auswahl einer Hauptkategorie werden die Unterkategorien angezeigt</p>
+              <p>Bei gewählter Hauptkategorie werden die Unterkategorien dargestellt.</p>
             </div>
           </div>
           <canvas id="categoryBreakdownChart"></canvas>
@@ -194,7 +194,7 @@
           <section class="card">
             <div class="card-header">
               <div>
-                <h2>Überblick Zeitraum</h2>
+                <h2>Überblick Gesamtzeitraum</h2>
               </div>
             </div>
             <table class="data-table" id="rangeOverviewTable">
@@ -209,12 +209,12 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h2>Hauptkategorien Analysemonat vs. Zeitraum</h2>
+              <h2>Hauptkategorien Analysemonat vs. Gesamtzeitraum</h2>
             </div>
           </div>
           <table class="data-table" id="categoryCompareTable">
             <thead>
-              <tr><th>Hauptkategorie</th><th>Analysemonat</th><th>Zeitraum</th></tr>
+              <tr><th>Hauptkategorie</th><th>Analysemonat</th><th>Gesamtzeitraum</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -239,11 +239,36 @@
                 <p id="bookingFormModeLabel">Neue Buchung</p>
               </div>
             </div>
+
             <form id="transactionForm" class="form-grid">
               <input type="hidden" name="id" />
 
-              <label>Datum<input type="date" name="date" required></label>
-              <label>Beschreibung<input type="text" name="title" required></label>
+              <label>
+                Buchungstyp
+                <select name="booking_type" id="bookingType" required>
+                  <option value="expense" selected>Kostenbuchung</option>
+                  <option value="settlement">Ausgleichsbuchung Saldo</option>
+                </select>
+              </label>
+
+              <label>
+                Datum
+                <input type="date" name="date" required>
+              </label>
+
+              <label class="full">
+                Beschreibung
+                <input type="text" name="title" required>
+              </label>
+
+              <label>
+                Gegenpartei
+                <select name="counterparty" id="transactionCounterparty">
+                  <option value="">—</option>
+                  <option value="Jana March">Jana March</option>
+                  <option value="Hofer Maximilian">Hofer Maximilian</option>
+                </select>
+              </label>
 
               <label>
                 Hauptkategorie
@@ -255,7 +280,10 @@
                 <select name="sub_category" id="bookingSubCategory" required></select>
               </label>
 
-              <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+              <label>
+                Betrag (€)
+                <input type="number" name="amount" step="0.01" required>
+              </label>
 
               <label>
                 Bezahlt von
@@ -267,7 +295,7 @@
 
               <label>
                 Split aktiv?
-                <select name="split_enabled">
+                <select name="split_enabled" id="transactionSplitEnabled">
                   <option value="nein" selected>nein</option>
                   <option value="ja">ja</option>
                 </select>
@@ -275,7 +303,7 @@
 
               <label>
                 Anteil Eigentümer
-                <select name="split_percent">
+                <select name="split_percent" id="transactionSplitPercent">
                   <option value="100" selected>100 %</option>
                   <option value="90">90 %</option>
                   <option value="80">80 %</option>
@@ -299,7 +327,15 @@
                 </select>
               </label>
 
-              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+              <label>
+                Zahlungsart
+                <input type="text" name="payment_type">
+              </label>
+
+              <label class="full">
+                Notiz
+                <textarea name="note" rows="3"></textarea>
+              </label>
 
               <div class="full actions-row">
                 <button class="btn btn-primary" type="submit" id="transactionSubmitBtn">Buchung speichern</button>
@@ -312,7 +348,7 @@
             <div class="card-header">
               <div>
                 <h2>Haushaltsbuchungen</h2>
-                <p>Es werden standardmäßig die letzten 10 Buchungen angezeigt</p>
+                <p>Es werden standardmäßig die letzten 10 Buchungen angezeigt.</p>
               </div>
             </div>
             <table class="data-table" id="transactionsTable">
@@ -370,7 +406,10 @@
                   </select>
                 </label>
 
-                <label class="full">Beschreibung<textarea name="description" rows="3"></textarea></label>
+                <label class="full">
+                  Beschreibung
+                  <textarea name="description" rows="3"></textarea>
+                </label>
 
                 <div class="full actions-row">
                   <button class="btn btn-primary" type="submit" id="tripSubmitBtn">Reise speichern</button>
@@ -394,8 +433,15 @@
                   <select name="trip_id" id="tripExpenseTripId" required></select>
                 </label>
 
-                <label>Datum<input type="date" name="date" required></label>
-                <label>Beschreibung<input type="text" name="title" required></label>
+                <label>
+                  Datum
+                  <input type="date" name="date" required>
+                </label>
+
+                <label class="full">
+                  Beschreibung
+                  <input type="text" name="title" required>
+                </label>
 
                 <label>
                   Hauptkategorie
@@ -407,7 +453,10 @@
                   <select name="sub_category" id="tripSubCategory" required></select>
                 </label>
 
-                <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
+                <label>
+                  Betrag (€)
+                  <input type="number" name="amount" step="0.01" required>
+                </label>
 
                 <label>
                   Bezahlt von
@@ -419,7 +468,7 @@
 
                 <label>
                   Split aktiv?
-                  <select name="split_enabled">
+                  <select name="split_enabled" id="tripExpenseSplitEnabled">
                     <option value="nein" selected>nein</option>
                     <option value="ja">ja</option>
                   </select>
@@ -427,7 +476,7 @@
 
                 <label>
                   Anteil Eigentümer
-                  <select name="split_percent">
+                  <select name="split_percent" id="tripExpenseSplitPercent">
                     <option value="100" selected>100 %</option>
                     <option value="90">90 %</option>
                     <option value="80">80 %</option>
@@ -451,7 +500,10 @@
                   </select>
                 </label>
 
-                <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+                <label class="full">
+                  Notiz
+                  <textarea name="note" rows="3"></textarea>
+                </label>
 
                 <div class="full actions-row">
                   <button class="btn btn-primary" type="submit" id="tripExpenseSubmitBtn">Urlaubsausgabe speichern</button>
@@ -584,7 +636,7 @@
 
               <label>
                 Split aktiv?
-                <select name="split_enabled">
+                <select name="split_enabled" id="fixedCostSplitEnabled">
                   <option value="nein" selected>nein</option>
                   <option value="ja">ja</option>
                 </select>
@@ -592,7 +644,7 @@
 
               <label>
                 Anteil Eigentümer
-                <select name="split_percent">
+                <select name="split_percent" id="fixedCostSplitPercent">
                   <option value="100" selected>100 %</option>
                   <option value="90">90 %</option>
                   <option value="80">80 %</option>
@@ -615,7 +667,10 @@
                 </select>
               </label>
 
-              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+              <label class="full">
+                Notiz
+                <textarea name="note" rows="3"></textarea>
+              </label>
 
               <div class="full actions-row">
                 <button class="btn btn-primary" type="submit" id="fixedCostSubmitBtn">Fixkosten speichern</button>
@@ -654,7 +709,11 @@
               </label>
 
               <label>Betrag (€)<input type="number" name="amount" step="0.01" required></label>
-              <label class="full">Notiz<textarea name="note" rows="3"></textarea></label>
+
+              <label class="full">
+                Notiz
+                <textarea name="note" rows="3"></textarea>
+              </label>
 
               <div class="full actions-row">
                 <button class="btn btn-primary" type="submit" id="incomeSubmitBtn">Einnahme speichern</button>
