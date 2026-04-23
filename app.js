@@ -88,7 +88,16 @@
     incomeCancelEditBtn: document.getElementById("incomeCancelEditBtn"),
 
     fixedCompositionLabel: document.getElementById("fixedCompositionLabel"),
-    variableCompositionLabel: document.getElementById("variableCompositionLabel")
+    variableCompositionLabel: document.getElementById("variableCompositionLabel"),
+
+    bookingType: document.getElementById("bookingType"),
+    transactionCounterparty: document.getElementById("transactionCounterparty"),
+    transactionSplitEnabled: document.getElementById("transactionSplitEnabled"),
+    transactionSplitPercent: document.getElementById("transactionSplitPercent"),
+    tripExpenseSplitEnabled: document.getElementById("tripExpenseSplitEnabled"),
+    tripExpenseSplitPercent: document.getElementById("tripExpenseSplitPercent"),
+    fixedCostSplitEnabled: document.getElementById("fixedCostSplitEnabled"),
+    fixedCostSplitPercent: document.getElementById("fixedCostSplitPercent")
   };
 
   const editState = {
@@ -117,13 +126,13 @@
       "'": "&#039;"
     }[m]));
 
-  function toPercent(value, income) {
-    return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
-  }
-
   const currentMonth = () => new Date().toISOString().slice(0, 7);
   const monthFromDate = (value) => String(value || "").slice(0, 7);
   const normalizeDateOnly = (value) => String(value || "").slice(0, 10);
+
+  function toPercent(value, income) {
+    return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
+  }
 
   function currentUser() {
     return typeof getActiveUser === "function" ? getActiveUser() : null;
@@ -141,12 +150,12 @@
     return (els.chartMode?.value || "currency") === "percent";
   }
 
-  function selectedAnalysisMonth() {
-    return els.filterAnalysisMonth?.value || currentMonth();
-  }
-
   function selectedStartMonth() {
     return els.filterStartMonth?.value || DEFAULT_START_MONTH;
+  }
+
+  function selectedAnalysisMonth() {
+    return els.filterAnalysisMonth?.value || currentMonth();
   }
 
   function showMessage(text, type = "error") {
@@ -236,7 +245,6 @@
   function monthRange() {
     const count = Number(els.rangeMonths?.value || DEFAULT_RANGE_MONTHS);
     const months = [];
-
     const [startYear, startMonth] = selectedStartMonth().split("-").map(Number);
     const startDate = new Date(startYear, startMonth - 1, 1);
 
@@ -244,8 +252,34 @@
       const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     }
+    return months;
+  }
+
+  function analysisRangeMonths() {
+    const start = selectedStartMonth();
+    const end = currentMonth();
+
+    const months = [];
+    const [startYear, startMonth] = start.split("-").map(Number);
+    const [endYear, endMonth] = end.split("-").map(Number);
+
+    let cursor = new Date(startYear, startMonth - 1, 1);
+    const endDate = new Date(endYear, endMonth - 1, 1);
+
+    while (cursor <= endDate) {
+      months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
 
     return months;
+  }
+
+  function isSettlement(row) {
+    return String(row.booking_type || "expense").toLowerCase() === "settlement";
+  }
+
+  function isExpenseBooking(row) {
+    return !isSettlement(row);
   }
 
   function visibleCategories(module) {
@@ -286,7 +320,11 @@
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const user = currentUserName();
-    if ((row.owner_user || "") === user) return true;
+    const owner = row.owner_user || "";
+    const counterparty = row.counterparty || "";
+
+    if (owner === user) return true;
+    if (isSettlement(row) && counterparty === user) return true;
 
     const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     if (!splitEnabled) return false;
@@ -322,6 +360,8 @@
   }
 
   function getUserShareFromAmount(row, baseAmount) {
+    if (isSettlement(row)) return 0;
+
     const amount = Number(baseAmount || 0);
     const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     const splitPercent = Number(row.split_percent || 100);
@@ -344,6 +384,7 @@
   function filteredTransactionsForMonth(month) {
     return (state.data.transactions || [])
       .filter(isVisibleTransaction)
+      .filter(isExpenseBooking)
       .filter((row) => monthFromDate(row.month_key || row.date) === month);
   }
 
@@ -394,11 +435,67 @@
     );
   }
 
-  function calculatePeerBalance(rows) {
+  function calculateSettlementEffect(row) {
+    if (!isSettlement(row)) return 0;
+
+    const me = currentUserName();
+    const amount = Number(row.amount || 0);
+    const owner = row.owner_user || "";
+    const paidBy = row.paid_by || "";
+    const counterparty = row.counterparty || "";
+
+    if (owner === me && counterparty === otherUserName()) {
+      if (paidBy === me) return -amount;
+      if (paidBy === counterparty) return amount;
+    }
+
+    if (owner !== me && counterparty === me) {
+      if (paidBy === me) return amount;
+      if (paidBy === owner) return -amount;
+    }
+
+    return 0;
+  }
+
+  function calculatePeerBalanceForMonth(month) {
     const me = currentUserName();
     let balance = 0;
 
-    rows.forEach((row) => {
+    const txRows = (state.data.transactions || [])
+      .filter(isVisibleTransaction)
+      .filter((row) => monthFromDate(row.month_key || row.date) === month);
+
+    const tripRows = (state.data.tripExpenses || [])
+      .filter(isVisibleTrip)
+      .filter((row) => monthFromDate(row.month_key || row.date) === month);
+
+    txRows.forEach((row) => {
+      if (isSettlement(row)) {
+        balance += calculateSettlementEffect(row);
+        return;
+      }
+
+      const amount = Number(row.amount || 0);
+      const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+      const splitPercent = Number(row.split_percent || 100);
+      const owner = row.owner_user || "";
+      const paidBy = row.paid_by || "";
+
+      if (!splitEnabled) return;
+
+      const ownerShare = amount * (splitPercent / 100);
+      const otherShare = amount - ownerShare;
+
+      if (owner === me) {
+        if (paidBy === me) balance += otherShare;
+        else balance -= ownerShare;
+      } else {
+        if (paidBy === me) balance += ownerShare;
+        else balance -= otherShare;
+      }
+    });
+
+    tripRows.forEach((row) => {
       const amount = Number(row.amount || 0);
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
       const splitPercent = Number(row.split_percent || 100);
@@ -420,6 +517,11 @@
     });
 
     return balance;
+  }
+
+  function calculateOpenPeerBalanceUntil(month) {
+    const months = analysisRangeMonths().filter((m) => m <= month);
+    return months.reduce((sum, m) => sum + calculatePeerBalanceForMonth(m), 0);
   }
 
   function aggregateCategories(rows) {
@@ -521,13 +623,10 @@
   }
 
   function getIncomeForTable() {
-    const months = monthRange().slice(-10);
-    const monthSet = new Set(months);
-
     return (state.data.income || [])
       .filter(isVisibleIncome)
-      .filter((row) => monthSet.has(monthFromDate(row.month_key || row.date)))
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .slice(0, 10);
   }
 
   function getAllVisibleCategoriesForTable() {
@@ -546,11 +645,12 @@
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
   }
 
-  function actionButtons(type, clientKey) {
+  function actionButtons(type, record) {
+    const backendId = type === "trip" ? record.trip_id : record.id;
     return `
       <div class="table-actions">
-        <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-key="${escapeHtml(clientKey)}">Bearbeiten</button>
-        <button type="button" class="btn btn-ghost btn-xs js-delete" data-type="${escapeHtml(type)}" data-key="${escapeHtml(clientKey)}">Löschen</button>
+        <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-key="${escapeHtml(record._clientKey)}">Bearbeiten</button>
+        <button type="button" class="btn btn-ghost btn-xs js-delete" data-type="${escapeHtml(type)}" data-id="${escapeHtml(backendId)}">Löschen</button>
       </div>
     `;
   }
@@ -567,7 +667,9 @@
     const fixedRate = income ? (fixedCosts / income) * 100 : 0;
     const expenseRate = income ? (totalExpenses / income) * 100 : 0;
     const variableRate = income ? (variableCosts / income) * 100 : 0;
-    const peerBalance = calculatePeerBalance(txRows.concat(tripRows));
+
+    const peerBalanceMonth = calculatePeerBalanceForMonth(month);
+    const peerBalanceOpen = calculateOpenPeerBalanceUntil(month);
     const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
     const percentMode = isPercentMode();
 
@@ -585,22 +687,21 @@
         percentMode ? "Fixkostenquote bezogen auf Einkommen" : "Monatliche Fixkostenbelastung";
     }
 
-    const balanceTarget = els.heroPeerBalance || els.heroJanaBalance;
-    if (balanceTarget) balanceTarget.textContent = currency(peerBalance);
-    if (els.heroPeerLabel) els.heroPeerLabel.textContent = `Saldo ${otherUserName()}`;
+    if (els.heroPeerBalance) els.heroPeerBalance.textContent = currency(peerBalanceOpen);
+    if (els.heroPeerLabel) els.heroPeerLabel.textContent = `Offener Saldo ${otherUserName()}`;
 
     if (els.kpiGrid) {
       const items = percentMode
         ? [
             ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-            ["Ausgaben gesamt", percent(expenseRate), "Haushalt + Urlaub + Fixkosten"],
+            ["Ausgaben gesamt", percent(expenseRate), "Ohne Ausgleichsbuchungen"],
             ["Fixkosten", percent(fixedRate), "Fixkostenquote"],
-            ["Variable Kosten", percent(variableRate), "Variable Kostenquote"],
+            ["Variable Kosten", percent(variableRate), "Haushalt + Urlaub"],
             ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
           ]
         : [
             ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-            ["Ausgaben gesamt", currency(totalExpenses), "Haushalt + Urlaub + Fixkosten"],
+            ["Ausgaben gesamt", currency(totalExpenses), "Ohne Ausgleichsbuchungen"],
             ["Fixkosten", currency(fixedCosts), "Monatliche Fixkosten"],
             ["Variable Kosten", currency(variableCosts), "Haushalt + Urlaub"],
             ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
@@ -615,7 +716,50 @@
       `).join("");
     }
 
-    return { income, txTotal, tripTotal, fixedCosts, totalExpenses, variableCosts, available, categoryAggregate };
+    if (els.monthlySummary) {
+      els.monthlySummary.innerHTML = [
+        ["Analysemonat", month],
+        ["Haushaltsausgaben", currency(txTotal)],
+        ["Urlaubsausgaben", currency(tripTotal)],
+        ["Fixkosten", currency(fixedCosts)],
+        ["Variable Kosten", currency(variableCosts)],
+        ["Ausgaben gesamt", currency(totalExpenses)],
+        ["Überschuss", currency(available)]
+      ].map(([k, v]) => `
+        <div class="summary-row">
+          <div class="key">${escapeHtml(k)}</div>
+          <div class="val">${escapeHtml(v)}</div>
+        </div>
+      `).join("");
+    }
+
+    if (els.insightList) {
+      els.insightList.innerHTML = [
+        ["Saldo Monat", currency(peerBalanceMonth)],
+        ["Offener Gesamtsaldo", currency(peerBalanceOpen)],
+        ["Fixkosten aktiv", `${activeFixedCostsForMonth(month).length} Positionen`],
+        ["Haushaltstransaktionen", `${txRows.length}`],
+        ["Urlaubstransaktionen", `${tripRows.length}`]
+      ].map(([k, v]) => `
+        <div class="summary-row">
+          <div class="key">${escapeHtml(k)}</div>
+          <div class="val">${escapeHtml(v)}</div>
+        </div>
+      `).join("");
+    }
+
+    return {
+      income,
+      txTotal,
+      tripTotal,
+      fixedCosts,
+      totalExpenses,
+      variableCosts,
+      available,
+      categoryAggregate,
+      peerBalanceMonth,
+      peerBalanceOpen
+    };
   }
 
   function chartOptions(stacked = false) {
@@ -727,13 +871,11 @@
           { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
         ];
 
-    const highlightMonth = selectedAnalysisMonth();
-
     ensureChart("masterChart", "masterChart", {
       type: "line",
       data: { labels: months, datasets },
       options: chartOptions(),
-      plugins: [createSelectedMonthHighlightPlugin(highlightMonth)]
+      plugins: [createSelectedMonthHighlightPlugin(selectedAnalysisMonth())]
     });
 
     const fixedMonthRows = activeFixedCostsForMonth(month);
@@ -744,9 +886,7 @@
       fixedAgg.set(key, (fixedAgg.get(key) || 0) + share);
     });
 
-    if (els.fixedCompositionLabel) {
-      els.fixedCompositionLabel.textContent = "Aktueller Monat";
-    }
+    if (els.fixedCompositionLabel) els.fixedCompositionLabel.textContent = "Analysemonat";
 
     ensureChart("fixedCompositionChart", "fixedCompositionChart", {
       type: "bar",
@@ -768,9 +908,7 @@
       variableAgg.set(key, (variableAgg.get(key) || 0) + getCurrentUserAmount(row));
     });
 
-    if (els.variableCompositionLabel) {
-      els.variableCompositionLabel.textContent = "Aktueller Monat";
-    }
+    if (els.variableCompositionLabel) els.variableCompositionLabel.textContent = "Analysemonat";
 
     ensureChart("variableCompositionChart", "variableCompositionChart", {
       type: "bar",
@@ -836,7 +974,9 @@
       ["Fixkosten", percentMode ? percent(toPercent(metrics.fixedCosts, income)) : currency(metrics.fixedCosts)],
       ["Variable Kosten", percentMode ? percent(toPercent(metrics.variableCosts, income)) : currency(metrics.variableCosts)],
       ["Gesamtausgaben", percentMode ? percent(toPercent(metrics.totalExpenses, income)) : currency(metrics.totalExpenses)],
-      ["Überschuss", percentMode ? percent(toPercent(metrics.available, income)) : currency(metrics.available)]
+      ["Überschuss", percentMode ? percent(toPercent(metrics.available, income)) : currency(metrics.available)],
+      ["Saldo Monat", currency(metrics.peerBalanceMonth)],
+      ["Offener Gesamtsaldo", currency(metrics.peerBalanceOpen)]
     ];
 
     els.monthOverviewTableBody.innerHTML = rows.map(([label, value]) => `
@@ -850,16 +990,22 @@
   function renderRangeOverviewTable() {
     if (!els.rangeOverviewTableBody) return;
 
-    const months = monthRange();
+    const months = analysisRangeMonths();
     const income = months.reduce((sum, m) => sum + monthlyIncome(m), 0);
-    const txTotal = months.reduce((sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
-    const tripTotal = months.reduce((sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
+    const txTotal = months.reduce(
+      (sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0),
+      0
+    );
+    const tripTotal = months.reduce(
+      (sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0),
+      0
+    );
     const fixedCosts = months.reduce((sum, m) => sum + fixedCostsMonthlyTotal(m), 0);
     const variableCosts = txTotal + tripTotal;
     const totalExpenses = variableCosts + fixedCosts;
     const available = income - totalExpenses;
-
     const percentMode = isPercentMode();
+    const openBalance = calculateOpenPeerBalanceUntil(selectedAnalysisMonth());
 
     const rows = [
       ["Einnahmen", percentMode ? "100,0 %" : currency(income)],
@@ -868,7 +1014,8 @@
       ["Fixkosten", percentMode ? percent(toPercent(fixedCosts, income)) : currency(fixedCosts)],
       ["Variable Kosten", percentMode ? percent(toPercent(variableCosts, income)) : currency(variableCosts)],
       ["Gesamtausgaben", percentMode ? percent(toPercent(totalExpenses, income)) : currency(totalExpenses)],
-      ["Überschuss", percentMode ? percent(toPercent(available, income)) : currency(available)]
+      ["Überschuss", percentMode ? percent(toPercent(available, income)) : currency(available)],
+      ["Offener Gesamtsaldo", currency(openBalance)]
     ];
 
     els.rangeOverviewTableBody.innerHTML = rows.map(([label, value]) => `
@@ -886,7 +1033,7 @@
     aggregateCategories(txRows.concat(tripRows)).forEach(([key, value]) => monthAgg.set(key, value));
 
     const rangeAgg = new Map();
-    monthRange().forEach((m) => {
+    analysisRangeMonths().forEach((m) => {
       const rows = filteredTransactionsForMonth(m).concat(filteredTripExpensesForMonth(m));
       aggregateCategories(rows).forEach(([key, value]) => {
         rangeAgg.set(key, (rangeAgg.get(key) || 0) + value);
@@ -896,7 +1043,7 @@
     const keys = [...new Set([...monthAgg.keys(), ...rangeAgg.keys()])].sort();
     const percentMode = isPercentMode();
     const monthIncome = monthlyIncome(month);
-    const rangeIncome = monthRange().reduce((sum, m) => sum + monthlyIncome(m), 0);
+    const rangeIncome = analysisRangeMonths().reduce((sum, m) => sum + monthlyIncome(m), 0);
 
     els.categoryCompareTableBody.innerHTML = keys.length
       ? keys.map((key) => `
@@ -918,10 +1065,14 @@
           <tr>
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.title)}</td>
-            <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
-            <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
+            <td>${escapeHtml(
+              isSettlement(row)
+                ? `Verrechnung / ${row.counterparty || "Saldoausgleich"}`
+                : `${row.main_category} / ${row.sub_category}`
+            )}</td>
+            <td>${escapeHtml(isSettlement(row) ? currency(row.amount) : currency(getCurrentUserAmount(row)))}</td>
             <td>${escapeHtml(row.paid_by)}</td>
-            <td>${actionButtons("transaction", row._clientKey)}</td>
+            <td>${actionButtons("transaction", row)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="6" class="table-empty">Noch keine Haushaltsbuchungen vorhanden</td></tr>';
@@ -938,7 +1089,7 @@
             <td>${escapeHtml(row.destination)}</td>
             <td>${escapeHtml(`${normalizeDateOnly(row.start_date)} – ${normalizeDateOnly(row.end_date)}`)}</td>
             <td>${escapeHtml(currency(row.planned_budget))}</td>
-            <td>${actionButtons("trip", row._clientKey)}</td>
+            <td>${actionButtons("trip", row)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Reisen vorhanden</td></tr>';
@@ -956,7 +1107,7 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
-            <td>${actionButtons("tripExpense", row._clientKey)}</td>
+            <td>${actionButtons("tripExpense", row)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="5" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
@@ -972,7 +1123,7 @@
             <td>${escapeHtml(row.module)}</td>
             <td>${escapeHtml(row.main_category)}</td>
             <td>${escapeHtml(row.sub_category)}</td>
-            <td>${actionButtons("category", row._clientKey)}</td>
+            <td>${actionButtons("category", row)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Kategorien vorhanden</td></tr>';
@@ -988,7 +1139,7 @@
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(currency(getUserShareFromAmount(row, row.amount)))}</td>
             <td>${escapeHtml(row.frequency)}</td>
-            <td>${actionButtons("fixedCost", row._clientKey)}</td>
+            <td>${actionButtons("fixedCost", row)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Fixkosten vorhanden</td></tr>';
@@ -1004,7 +1155,7 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(row.income_type)}</td>
             <td>${escapeHtml(currency(row.amount))}</td>
-            <td>${actionButtons("income", row._clientKey)}</td>
+            <td>${actionButtons("income", row)}</td>
           </tr>
         `).join("")
       : '<tr><td colspan="4" class="table-empty">Noch keine Einnahmen vorhanden</td></tr>';
@@ -1036,6 +1187,7 @@
     populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, els.bookingMainCategory?.value);
     populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, els.tripMainCategory?.value);
     populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, els.fixedMainCategory?.value);
+    updateTransactionFormVisibility();
   }
 
   async function loadAll() {
@@ -1105,19 +1257,63 @@
     });
   }
 
+  function setFieldDisabled(field, disabled) {
+    if (!field) return;
+    field.disabled = disabled;
+  }
+
+  function closestLabel(field) {
+    return field?.closest("label") || null;
+  }
+
+  function setLabelHidden(field, hidden) {
+    const label = closestLabel(field);
+    if (label) label.style.display = hidden ? "none" : "";
+  }
+
+  function updateTransactionFormVisibility() {
+    const isSettlementType = (els.bookingType?.value || "expense") === "settlement";
+
+    setLabelHidden(els.transactionCounterparty, false);
+
+    setLabelHidden(els.bookingMainCategory, isSettlementType);
+    setLabelHidden(els.bookingSubCategory, isSettlementType);
+    setLabelHidden(els.transactionSplitEnabled, isSettlementType);
+    setLabelHidden(els.transactionSplitPercent, isSettlementType);
+
+    setFieldDisabled(els.bookingMainCategory, isSettlementType);
+    setFieldDisabled(els.bookingSubCategory, isSettlementType);
+    setFieldDisabled(els.transactionSplitEnabled, isSettlementType);
+    setFieldDisabled(els.transactionSplitPercent, isSettlementType);
+
+    if (isSettlementType) {
+      if (els.transactionSplitEnabled) els.transactionSplitEnabled.value = "nein";
+      if (els.transactionSplitPercent) els.transactionSplitPercent.value = "100";
+    }
+  }
+
   function resetFormUi(type) {
     if (type === "transaction") {
       editState.transaction = null;
       els.transactionForm?.reset();
       setDefaultMonth();
+
       const splitField = els.transactionForm?.elements.namedItem("split_percent");
       const splitEnabledField = els.transactionForm?.elements.namedItem("split_enabled");
+      const bookingTypeField = els.transactionForm?.elements.namedItem("booking_type");
+      const counterpartyField = els.transactionForm?.elements.namedItem("counterparty");
+
       if (splitField) splitField.value = "100";
       if (splitEnabledField) splitEnabledField.value = "nein";
+      if (bookingTypeField) bookingTypeField.value = "expense";
+      if (counterpartyField) counterpartyField.value = otherUserName();
+
       if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
       if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
       if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "none";
+
       populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory);
+      updateTransactionFormVisibility();
       return;
     }
 
@@ -1134,10 +1330,12 @@
       editState.tripExpense = null;
       els.tripExpenseForm?.reset();
       setDefaultMonth();
+
       const splitField = els.tripExpenseForm?.elements.namedItem("split_percent");
       const splitEnabledField = els.tripExpenseForm?.elements.namedItem("split_enabled");
       if (splitField) splitField.value = "100";
       if (splitEnabledField) splitEnabledField.value = "nein";
+
       if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Neue Urlaubsausgabe";
       if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Urlaubsausgabe speichern";
       if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "none";
@@ -1158,10 +1356,12 @@
     if (type === "fixedCost") {
       editState.fixedCost = null;
       els.fixedCostForm?.reset();
+
       const splitField = els.fixedCostForm?.elements.namedItem("split_percent");
       const splitEnabledField = els.fixedCostForm?.elements.namedItem("split_enabled");
       if (splitField) splitField.value = "100";
       if (splitEnabledField) splitEnabledField.value = "nein";
+
       if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Neue Fixkostenposition";
       if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Fixkosten speichern";
       if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "none";
@@ -1189,6 +1389,7 @@
       if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Änderungen speichern";
       if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "inline-flex";
       populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, record.main_category, record.sub_category);
+      updateTransactionFormVisibility();
       document.getElementById("panel-bookings")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
@@ -1256,7 +1457,7 @@
     return null;
   }
 
-  async function deleteRecord(type, key) {
+  async function deleteRecord(type, backendId) {
     const confirmed = window.confirm("Diesen Eintrag wirklich löschen?");
     if (!confirmed) return;
 
@@ -1269,12 +1470,9 @@
       income: "deleteIncome"
     };
 
-    const record = getRecordByTypeAndKey(type, key);
-    if (!record) throw new Error("Datensatz nicht gefunden.");
-
     const payload = {};
-    if (type === "trip") payload.trip_id = record.trip_id;
-    else payload.id = record.id;
+    if (type === "trip") payload.trip_id = backendId;
+    else payload.id = backendId;
 
     await apiPost(actionMap[type], payload);
     resetFormUi(type);
@@ -1388,6 +1586,8 @@
     els.categoryCancelEditBtn?.addEventListener("click", () => resetFormUi("category"));
     els.fixedCostCancelEditBtn?.addEventListener("click", () => resetFormUi("fixedCost"));
     els.incomeCancelEditBtn?.addEventListener("click", () => resetFormUi("income"));
+
+    els.bookingType?.addEventListener("change", updateTransactionFormVisibility);
   }
 
   function bindTableActions() {
@@ -1404,9 +1604,9 @@
       const deleteBtn = event.target.closest(".js-delete");
       if (deleteBtn) {
         const type = deleteBtn.dataset.type;
-        const key = deleteBtn.dataset.key;
+        const backendId = deleteBtn.dataset.id;
         try {
-          await deleteRecord(type, key);
+          await deleteRecord(type, backendId);
         } catch (error) {
           showMessage(error.message || "Löschen fehlgeschlagen.", "error");
           console.error(error);
@@ -1452,6 +1652,7 @@
     bindFilters();
     bindTableActions();
     wireCategorySelects();
+    resetFormUi("transaction");
 
     state.initializedUi = true;
   }
