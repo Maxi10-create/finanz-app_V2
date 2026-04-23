@@ -130,6 +130,13 @@
   const monthFromDate = (value) => String(value || "").slice(0, 7);
   const normalizeDateOnly = (value) => String(value || "").slice(0, 10);
 
+  function normalizePersonName(name) {
+    const value = String(name || "").trim().toLowerCase();
+    if (value === "hofer maximilian" || value === "maximilian hofer") return "Hofer Maximilian";
+    if (value === "jana march") return "Jana March";
+    return String(name || "").trim();
+  }
+
   function toPercent(value, income) {
     return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
   }
@@ -139,7 +146,8 @@
   }
 
   function currentUserName() {
-    return currentUser()?.displayName || CONFIG.USER_NAME || "Hofer Maximilian";
+    const raw = currentUser()?.displayName || CONFIG.USER_NAME || "Hofer Maximilian";
+    return normalizePersonName(raw);
   }
 
   function otherUserName() {
@@ -290,7 +298,7 @@
       .filter((row) => {
         if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
         if (module === "Urlaub") return true;
-        if ((row.owner_user || "") === user) return true;
+        if (normalizePersonName(row.owner_user || "") === user) return true;
         return String(row.visible_to_other || "").toLowerCase() === "ja";
       });
   }
@@ -320,8 +328,8 @@
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const user = currentUserName();
-    const owner = row.owner_user || "";
-    const counterparty = row.counterparty || "";
+    const owner = normalizePersonName(row.owner_user || "");
+    const counterparty = normalizePersonName(row.counterparty || "");
 
     if (owner === user) return true;
     if (isSettlement(row) && counterparty === user) return true;
@@ -343,7 +351,7 @@
   function isVisibleIncome(row) {
     if (!row) return false;
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-    return (row.owner_user || "") === currentUserName();
+    return normalizePersonName(row.owner_user || "") === currentUserName();
   }
 
   function isVisibleFixedCost(row) {
@@ -351,7 +359,7 @@
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const user = currentUserName();
-    if ((row.owner_user || "") === user) return true;
+    if (normalizePersonName(row.owner_user || "") === user) return true;
 
     const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     if (!splitEnabled) return false;
@@ -365,7 +373,7 @@
     const amount = Number(baseAmount || 0);
     const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     const splitPercent = Number(row.split_percent || 100);
-    const owner = row.owner_user || "";
+    const owner = normalizePersonName(row.owner_user || "");
     const me = currentUserName();
 
     if (!splitEnabled) {
@@ -439,19 +447,20 @@
     if (!isSettlement(row)) return 0;
 
     const me = currentUserName();
+    const other = otherUserName();
     const amount = Number(row.amount || 0);
-    const owner = row.owner_user || "";
-    const paidBy = row.paid_by || "";
-    const counterparty = row.counterparty || "";
+    const owner = normalizePersonName(row.owner_user || "");
+    const paidBy = normalizePersonName(row.paid_by || "");
+    const counterparty = normalizePersonName(row.counterparty || other);
 
-    if (owner === me && counterparty === otherUserName()) {
+    if (owner === me && counterparty === other) {
       if (paidBy === me) return -amount;
-      if (paidBy === counterparty) return amount;
+      if (paidBy === other) return amount;
     }
 
-    if (owner !== me && counterparty === me) {
+    if (owner === other && counterparty === me) {
       if (paidBy === me) return amount;
-      if (paidBy === owner) return -amount;
+      if (paidBy === other) return -amount;
     }
 
     return 0;
@@ -478,8 +487,8 @@
       const amount = Number(row.amount || 0);
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
       const splitPercent = Number(row.split_percent || 100);
-      const owner = row.owner_user || "";
-      const paidBy = row.paid_by || "";
+      const owner = normalizePersonName(row.owner_user || "");
+      const paidBy = normalizePersonName(row.paid_by || "");
 
       if (!splitEnabled) return;
 
@@ -499,8 +508,8 @@
       const amount = Number(row.amount || 0);
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
       const splitPercent = Number(row.split_percent || 100);
-      const owner = row.owner_user || "";
-      const paidBy = row.paid_by || "";
+      const owner = normalizePersonName(row.owner_user || "");
+      const paidBy = normalizePersonName(row.paid_by || "");
 
       if (!splitEnabled) return;
 
@@ -1228,10 +1237,18 @@
 
     if (data.date && !data.month_key) data.month_key = data.date.slice(0, 7);
 
+    if (data.booking_type === "settlement" && !data.counterparty) {
+      data.counterparty = otherUserName();
+    }
+
+    if (data.paid_by) data.paid_by = normalizePersonName(data.paid_by);
+    if (data.counterparty) data.counterparty = normalizePersonName(data.counterparty);
+
     if (user) {
-      if (!data.created_by) data.created_by = user.displayName;
-      data.updated_by = user.displayName;
-      if (!data.owner_user) data.owner_user = user.displayName;
+      const displayName = normalizePersonName(user.displayName);
+      if (!data.created_by) data.created_by = displayName;
+      data.updated_by = displayName;
+      if (!data.owner_user) data.owner_user = displayName;
     }
 
     return data;
@@ -1289,6 +1306,9 @@
     if (isSettlementType) {
       if (els.transactionSplitEnabled) els.transactionSplitEnabled.value = "nein";
       if (els.transactionSplitPercent) els.transactionSplitPercent.value = "100";
+      if (els.transactionCounterparty && !els.transactionCounterparty.value) {
+        els.transactionCounterparty.value = otherUserName();
+      }
     }
   }
 
@@ -1301,378 +1321,4 @@
       const splitField = els.transactionForm?.elements.namedItem("split_percent");
       const splitEnabledField = els.transactionForm?.elements.namedItem("split_enabled");
       const bookingTypeField = els.transactionForm?.elements.namedItem("booking_type");
-      const counterpartyField = els.transactionForm?.elements.namedItem("counterparty");
-
-      if (splitField) splitField.value = "100";
-      if (splitEnabledField) splitEnabledField.value = "nein";
-      if (bookingTypeField) bookingTypeField.value = "expense";
-      if (counterpartyField) counterpartyField.value = otherUserName();
-
-      if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
-      if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
-      if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "none";
-
-      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory);
-      updateTransactionFormVisibility();
-      return;
-    }
-
-    if (type === "trip") {
-      editState.trip = null;
-      els.tripForm?.reset();
-      if (els.tripFormModeLabel) els.tripFormModeLabel.textContent = "Neue Reise";
-      if (els.tripSubmitBtn) els.tripSubmitBtn.textContent = "Reise speichern";
-      if (els.tripCancelEditBtn) els.tripCancelEditBtn.style.display = "none";
-      return;
-    }
-
-    if (type === "tripExpense") {
-      editState.tripExpense = null;
-      els.tripExpenseForm?.reset();
-      setDefaultMonth();
-
-      const splitField = els.tripExpenseForm?.elements.namedItem("split_percent");
-      const splitEnabledField = els.tripExpenseForm?.elements.namedItem("split_enabled");
-      if (splitField) splitField.value = "100";
-      if (splitEnabledField) splitEnabledField.value = "nein";
-
-      if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Neue Urlaubsausgabe";
-      if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Urlaubsausgabe speichern";
-      if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "none";
-      populateTripSelect();
-      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory);
-      return;
-    }
-
-    if (type === "category") {
-      editState.category = null;
-      els.categoryForm?.reset();
-      if (els.categoryFormModeLabel) els.categoryFormModeLabel.textContent = "Neue Kategorie";
-      if (els.categorySubmitBtn) els.categorySubmitBtn.textContent = "Kategorie speichern";
-      if (els.categoryCancelEditBtn) els.categoryCancelEditBtn.style.display = "none";
-      return;
-    }
-
-    if (type === "fixedCost") {
-      editState.fixedCost = null;
-      els.fixedCostForm?.reset();
-
-      const splitField = els.fixedCostForm?.elements.namedItem("split_percent");
-      const splitEnabledField = els.fixedCostForm?.elements.namedItem("split_enabled");
-      if (splitField) splitField.value = "100";
-      if (splitEnabledField) splitEnabledField.value = "nein";
-
-      if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Neue Fixkostenposition";
-      if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Fixkosten speichern";
-      if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "none";
-      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory);
-      return;
-    }
-
-    if (type === "income") {
-      editState.income = null;
-      els.incomeForm?.reset();
-      setDefaultMonth();
-      if (els.incomeFormModeLabel) els.incomeFormModeLabel.textContent = "Neue Einnahme";
-      if (els.incomeSubmitBtn) els.incomeSubmitBtn.textContent = "Einnahme speichern";
-      if (els.incomeCancelEditBtn) els.incomeCancelEditBtn.style.display = "none";
-    }
-  }
-
-  function startEdit(type, record) {
-    if (!record) return;
-
-    if (type === "transaction") {
-      editState.transaction = record.id;
-      setFormValues(els.transactionForm, record);
-      if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Buchung bearbeiten";
-      if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Änderungen speichern";
-      if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "inline-flex";
-      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, record.main_category, record.sub_category);
-      updateTransactionFormVisibility();
-      document.getElementById("panel-bookings")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "trip") {
-      editState.trip = record.trip_id;
-      setFormValues(els.tripForm, record);
-      if (els.tripFormModeLabel) els.tripFormModeLabel.textContent = "Reise bearbeiten";
-      if (els.tripSubmitBtn) els.tripSubmitBtn.textContent = "Änderungen speichern";
-      if (els.tripCancelEditBtn) els.tripCancelEditBtn.style.display = "inline-flex";
-      document.getElementById("panel-urlaub")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "tripExpense") {
-      editState.tripExpense = record.id;
-      setFormValues(els.tripExpenseForm, record);
-      if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Urlaubsausgabe bearbeiten";
-      if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Änderungen speichern";
-      if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "inline-flex";
-      populateTripSelect();
-      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, record.main_category, record.sub_category);
-      document.getElementById("panel-urlaub")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "category") {
-      editState.category = record.id;
-      setFormValues(els.categoryForm, record);
-      if (els.categoryFormModeLabel) els.categoryFormModeLabel.textContent = "Kategorie bearbeiten";
-      if (els.categorySubmitBtn) els.categorySubmitBtn.textContent = "Änderungen speichern";
-      if (els.categoryCancelEditBtn) els.categoryCancelEditBtn.style.display = "inline-flex";
-      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "fixedCost") {
-      editState.fixedCost = record.id;
-      setFormValues(els.fixedCostForm, record);
-      if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Fixkosten bearbeiten";
-      if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Änderungen speichern";
-      if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "inline-flex";
-      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, record.main_category, record.sub_category);
-      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "income") {
-      editState.income = record.id;
-      setFormValues(els.incomeForm, record);
-      if (els.incomeFormModeLabel) els.incomeFormModeLabel.textContent = "Einnahme bearbeiten";
-      if (els.incomeSubmitBtn) els.incomeSubmitBtn.textContent = "Änderungen speichern";
-      if (els.incomeCancelEditBtn) els.incomeCancelEditBtn.style.display = "inline-flex";
-      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
-  function getRecordByTypeAndKey(type, key) {
-    if (type === "transaction") return (state.data.transactions || []).find((r) => r._clientKey === key);
-    if (type === "trip") return (state.data.trips || []).find((r) => r._clientKey === key);
-    if (type === "tripExpense") return (state.data.tripExpenses || []).find((r) => r._clientKey === key);
-    if (type === "category") return (state.data.categories || []).find((r) => r._clientKey === key);
-    if (type === "fixedCost") return (state.data.fixedCosts || []).find((r) => r._clientKey === key);
-    if (type === "income") return (state.data.income || []).find((r) => r._clientKey === key);
-    return null;
-  }
-
-  async function deleteRecord(type, backendId) {
-    const confirmed = window.confirm("Diesen Eintrag wirklich löschen?");
-    if (!confirmed) return;
-
-    const actionMap = {
-      transaction: "deleteTransaction",
-      trip: "deleteTrip",
-      tripExpense: "deleteTripExpense",
-      category: "deleteCategory",
-      fixedCost: "deleteFixedCost",
-      income: "deleteIncome"
-    };
-
-    const payload = {};
-    if (type === "trip") payload.trip_id = backendId;
-    else payload.id = backendId;
-
-    await apiPost(actionMap[type], payload);
-    resetFormUi(type);
-    await loadAll();
-    showMessage("Eintrag gelöscht.", "success");
-  }
-
-  async function submitForm(form, addAction, updateAction, successAddText, successUpdateText, type) {
-    try {
-      clearMessage();
-
-      const data = formToObject(form);
-
-      const isEdit =
-        (type === "trip" && !!editState.trip) ||
-        (type === "transaction" && !!editState.transaction) ||
-        (type === "tripExpense" && !!editState.tripExpense) ||
-        (type === "category" && !!editState.category) ||
-        (type === "fixedCost" && !!editState.fixedCost) ||
-        (type === "income" && !!editState.income);
-
-      const action = isEdit ? updateAction : addAction;
-
-      await apiPost(action, data);
-
-      resetFormUi(type);
-      await loadAll();
-      showMessage(isEdit ? successUpdateText : successAddText, "success");
-    } catch (error) {
-      showMessage(error.message || "Speichern fehlgeschlagen.", "error");
-      console.error(error);
-    }
-  }
-
-  function bindForms() {
-    els.transactionForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.transactionForm,
-        "addTransaction",
-        "updateTransaction",
-        "Haushaltsbuchung gespeichert.",
-        "Haushaltsbuchung aktualisiert.",
-        "transaction"
-      );
-    });
-
-    els.tripForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.tripForm,
-        "addTrip",
-        "updateTrip",
-        "Reise gespeichert.",
-        "Reise aktualisiert.",
-        "trip"
-      );
-    });
-
-    els.tripExpenseForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.tripExpenseForm,
-        "addTripExpense",
-        "updateTripExpense",
-        "Urlaubsausgabe gespeichert.",
-        "Urlaubsausgabe aktualisiert.",
-        "tripExpense"
-      );
-    });
-
-    els.categoryForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.categoryForm,
-        "addCategory",
-        "updateCategory",
-        "Kategorie gespeichert.",
-        "Kategorie aktualisiert.",
-        "category"
-      );
-    });
-
-    els.fixedCostForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.fixedCostForm,
-        "addFixedCost",
-        "updateFixedCost",
-        "Fixkosten gespeichert.",
-        "Fixkosten aktualisiert.",
-        "fixedCost"
-      );
-    });
-
-    els.incomeForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.incomeForm,
-        "addIncome",
-        "updateIncome",
-        "Einnahme gespeichert.",
-        "Einnahme aktualisiert.",
-        "income"
-      );
-    });
-
-    els.transactionCancelEditBtn?.addEventListener("click", () => resetFormUi("transaction"));
-    els.tripCancelEditBtn?.addEventListener("click", () => resetFormUi("trip"));
-    els.tripExpenseCancelEditBtn?.addEventListener("click", () => resetFormUi("tripExpense"));
-    els.categoryCancelEditBtn?.addEventListener("click", () => resetFormUi("category"));
-    els.fixedCostCancelEditBtn?.addEventListener("click", () => resetFormUi("fixedCost"));
-    els.incomeCancelEditBtn?.addEventListener("click", () => resetFormUi("income"));
-
-    els.bookingType?.addEventListener("change", updateTransactionFormVisibility);
-  }
-
-  function bindTableActions() {
-    document.addEventListener("click", async (event) => {
-      const editBtn = event.target.closest(".js-edit");
-      if (editBtn) {
-        const type = editBtn.dataset.type;
-        const key = editBtn.dataset.key;
-        const record = getRecordByTypeAndKey(type, key);
-        startEdit(type, record);
-        return;
-      }
-
-      const deleteBtn = event.target.closest(".js-delete");
-      if (deleteBtn) {
-        const type = deleteBtn.dataset.type;
-        const backendId = deleteBtn.dataset.id;
-        try {
-          await deleteRecord(type, backendId);
-        } catch (error) {
-          showMessage(error.message || "Löschen fehlgeschlagen.", "error");
-          console.error(error);
-        }
-      }
-    });
-  }
-
-  function bindTabs() {
-    els.tabs?.addEventListener("click", (event) => {
-      const btn = event.target.closest(".nav-btn");
-      if (!btn) return;
-
-      document.querySelectorAll(".nav-btn").forEach((el) => el.classList.remove("active"));
-      btn.classList.add("active");
-
-      document.querySelectorAll(".panel").forEach((el) => el.classList.remove("active"));
-      document.getElementById(`panel-${btn.dataset.tab}`)?.classList.add("active");
-    });
-  }
-
-  function bindFilters() {
-    [
-      els.filterStartMonth,
-      els.filterAnalysisMonth,
-      els.filterMainCategory,
-      els.rangeMonths,
-      els.chartMode,
-      els.compositionMode
-    ].filter(Boolean).forEach((element) => {
-      element.addEventListener("change", renderAll);
-    });
-
-    els.reloadBtn?.addEventListener("click", loadAll);
-  }
-
-  function setupUiOnce() {
-    if (state.initializedUi) return;
-
-    setDefaultMonth();
-    bindTabs();
-    bindForms();
-    bindFilters();
-    bindTableActions();
-    wireCategorySelects();
-    resetFormUi("transaction");
-
-    state.initializedUi = true;
-  }
-
-  async function onUserLoggedIn() {
-    setupUiOnce();
-    await loadAll();
-  }
-
-  async function init() {
-    await initAuth();
-    const user = currentUser();
-    if (!user) return;
-
-    setupUiOnce();
-    await loadAll();
-  }
-
-  window.onUserLoggedIn = onUserLoggedIn;
-  window.loadAll = loadAll;
-
-  document.addEventListener("DOMContentLoaded", init);
-})();
+      const counterpartyField = els.transactionForm?.elements
