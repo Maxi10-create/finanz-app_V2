@@ -96,7 +96,22 @@
     bookingType: document.getElementById("bookingType"),
     transactionCounterparty: document.getElementById("transactionCounterparty"),
     transactionSplitEnabled: document.getElementById("transactionSplitEnabled"),
-    transactionSplitPercent: document.getElementById("transactionSplitPercent")
+    transactionSplitPercent: document.getElementById("transactionSplitPercent"),
+
+    housingRangeMonths: document.getElementById("housingRangeMonths"),
+    housingDisplayMode: document.getElementById("housingDisplayMode"),
+    housingMonthTotal: document.getElementById("housingMonthTotal"),
+    housingAverageTotal: document.getElementById("housingAverageTotal"),
+    housingCategoryCount: document.getElementById("housingCategoryCount"),
+    housingMonthTableBody: document.querySelector("#housingMonthTable tbody"),
+    housingAverageTableBody: document.querySelector("#housingAverageTable tbody"),
+
+    vacationAnalysisSelect: document.getElementById("vacationAnalysisSelect"),
+    vacationTotalCost: document.getElementById("vacationTotalCost"),
+    vacationCostPerDay: document.getElementById("vacationCostPerDay"),
+    vacationTripCount: document.getElementById("vacationTripCount"),
+    vacationKpiTableBody: document.querySelector("#vacationKpiTable tbody"),
+    vacationDaysTableBody: document.querySelector("#vacationDaysTable tbody")
   };
 
   const editState = {
@@ -135,14 +150,8 @@
 
   function normalizePersonName(name) {
     const raw = String(name || "").trim().toLowerCase();
-
-    if (
-      raw === "maximilian hofer" ||
-      raw === "hofer maximilian"
-    ) return PERSON_A;
-
+    if (raw === "maximilian hofer" || raw === "hofer maximilian") return PERSON_A;
     if (raw === "jana march") return PERSON_B;
-
     return String(name || "").trim();
   }
 
@@ -163,9 +172,7 @@
     const obj = { ...record };
     if ("owner_user" in obj) obj.owner_user = normalizePersonName(obj.owner_user);
     if ("paid_by" in obj) obj.paid_by = normalizePersonName(obj.paid_by);
-    if ("counterparty" in obj) {
-      obj.counterparty = obj.counterparty === "-" ? "-" : normalizePersonName(obj.counterparty);
-    }
+    if ("counterparty" in obj) obj.counterparty = obj.counterparty === "-" ? "-" : normalizePersonName(obj.counterparty);
     if ("created_by" in obj) obj.created_by = normalizePersonName(obj.created_by);
     if ("updated_by" in obj) obj.updated_by = normalizePersonName(obj.updated_by);
     return obj;
@@ -181,6 +188,14 @@
 
   function selectedAnalysisMonth() {
     return els.filterAnalysisMonth?.value || currentMonth();
+  }
+
+  function housingDisplayMode() {
+    return els.housingDisplayMode?.value || "currency";
+  }
+
+  function housingRangeMonths() {
+    return Number(els.housingRangeMonths?.value || 12);
   }
 
   function showMessage(text, type = "error") {
@@ -256,6 +271,9 @@
     if (els.rangeMonths && !els.rangeMonths.value) {
       els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
     }
+    if (els.housingRangeMonths && !els.housingRangeMonths.value) {
+      els.housingRangeMonths.value = "12";
+    }
 
     const today = new Date().toISOString().slice(0, 10);
     const transactionDate = els.transactionForm?.querySelector('input[name="date"]');
@@ -296,6 +314,19 @@
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
 
+    return months;
+  }
+
+  function housingMonthRange() {
+    const count = housingRangeMonths();
+    const months = [];
+    const [endYear, endMonth] = selectedAnalysisMonth().split("-").map(Number);
+    const endDate = new Date(endYear, endMonth - 1, 1);
+
+    for (let i = count - 1; i >= 0; i -= 1) {
+      const d = new Date(endDate.getFullYear(), endDate.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
     return months;
   }
 
@@ -462,36 +493,13 @@
 
   function calculateSettlementEffect(row) {
     if (!isSettlement(row)) return 0;
-  
+
     const me = currentUserName();
-    const other = otherUserName();
     const amount = Number(row.amount || 0);
-    const owner = normalizePersonName(row.owner_user || "");
     const paidBy = normalizePersonName(row.paid_by || "");
-    const counterparty =
-      row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
-  
-    // Fall A:
-    // Ich habe die Ausgleichsbuchung erstellt, Gegenpartei ist die andere Person
-    if (owner === me && counterparty === other) {
-      // Ich zahle an die andere Person -> meine negative Schuld wird kleiner
-      if (paidBy === me) return amount;
-  
-      // Die andere Person zahlt an mich -> meine positive Forderung wird kleiner
-      if (paidBy === other) return -amount;
-    }
-  
-    // Fall B:
-    // Die andere Person hat die Ausgleichsbuchung erstellt, ich bin die Gegenpartei
-    if (owner === other && counterparty === me) {
-      // Ich zahle an die andere Person -> meine negative Schuld wird kleiner
-      if (paidBy === me) return amount;
-  
-      // Die andere Person zahlt an mich -> meine positive Forderung wird kleiner
-      if (paidBy === other) return -amount;
-    }
-  
-    return 0;
+
+    if (paidBy === me) return amount;
+    return -amount;
   }
 
   function calculatePeerBalanceForMonth(month) {
@@ -637,6 +645,23 @@
       .join("");
   }
 
+  function populateVacationAnalysisSelect() {
+    if (!els.vacationAnalysisSelect) return;
+
+    const current = els.vacationAnalysisSelect.value;
+    const trips = (state.data.trips || [])
+      .filter(isVisibleTrip)
+      .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
+
+    els.vacationAnalysisSelect.innerHTML =
+      '<option value="year">Alle Urlaube aktuelles Jahr</option>' +
+      trips.map((row) => `<option value="${escapeHtml(row.trip_id)}">${escapeHtml(row.title)} – ${escapeHtml(row.destination)}</option>`).join("");
+
+    if ([ "year", ...trips.map((t) => t.trip_id) ].includes(current)) {
+      els.vacationAnalysisSelect.value = current;
+    }
+  }
+
   function getTransactionsForTable() {
     return (state.data.transactions || [])
       .filter(isVisibleTransaction)
@@ -749,6 +774,38 @@
           <div class="kpi-label">${escapeHtml(label)}</div>
           <div class="kpi-value">${escapeHtml(value)}</div>
           <div class="kpi-sub">${escapeHtml(sub)}</div>
+        </div>
+      `).join("");
+    }
+
+    if (els.monthlySummary) {
+      els.monthlySummary.innerHTML = [
+        ["Analysemonat", month],
+        ["Haushaltsausgaben", currency(txTotal)],
+        ["Urlaubsausgaben", currency(tripTotal)],
+        ["Fixkosten", currency(fixedCosts)],
+        ["Variable Kosten", currency(variableCosts)],
+        ["Ausgaben gesamt", currency(totalExpenses)],
+        ["Überschuss", currency(available)]
+      ].map(([k, v]) => `
+        <div class="summary-row">
+          <div class="key">${escapeHtml(k)}</div>
+          <div class="val">${escapeHtml(v)}</div>
+        </div>
+      `).join("");
+    }
+
+    if (els.insightList) {
+      els.insightList.innerHTML = [
+        ["Saldo Monat", currency(peerBalanceMonth)],
+        ["Offener Gesamtsaldo", currency(peerBalanceOpen)],
+        ["Fixkosten aktiv", `${activeFixedCostsForMonth(month).length} Positionen`],
+        ["Haushaltstransaktionen", `${txRows.length}`],
+        ["Urlaubstransaktionen", `${tripRows.length}`]
+      ].map(([k, v]) => `
+        <div class="summary-row">
+          <div class="key">${escapeHtml(k)}</div>
+          <div class="val">${escapeHtml(v)}</div>
         </div>
       `).join("");
     }
@@ -997,14 +1054,8 @@
 
     const months = analysisRangeMonths();
     const income = months.reduce((sum, m) => sum + monthlyIncome(m), 0);
-    const txTotal = months.reduce(
-      (sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0),
-      0
-    );
-    const tripTotal = months.reduce(
-      (sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0),
-      0
-    );
+    const txTotal = months.reduce((sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
+    const tripTotal = months.reduce((sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
     const fixedCosts = months.reduce((sum, m) => sum + fixedCostsMonthlyTotal(m), 0);
     const variableCosts = txTotal + tripTotal;
     const totalExpenses = variableCosts + fixedCosts;
@@ -1059,6 +1110,319 @@
           </tr>
         `).join("")
       : '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
+  }
+
+  function getVisibleVacationExpenses() {
+    return (state.data.tripExpenses || []).filter(isVisibleTrip);
+  }
+
+  function getTripById(tripId) {
+    return (state.data.trips || []).find((row) => row.trip_id === tripId) || null;
+  }
+
+  function getVacationCategoryBucket(row) {
+    const sub = String(row.sub_category || "").trim().toLowerCase();
+    const main = String(row.main_category || "").trim().toLowerCase();
+
+    if (sub.includes("transport")) return "Transport";
+    if (sub.includes("unterkunft")) return "Unterkunft";
+    if (sub.includes("essen")) return "Essen";
+    if (sub.includes("aktiv")) return "Aktivitäten";
+
+    if (main.includes("transport")) return "Transport";
+    if (main.includes("unterkunft")) return "Unterkunft";
+    if (main.includes("essen")) return "Essen";
+    if (main.includes("aktiv")) return "Aktivitäten";
+
+    return "Sonstiges";
+  }
+
+  function computeVacationOverviewData() {
+    const analysisYear = selectedAnalysisMonth().slice(0, 4);
+    const selectedTripId = els.vacationAnalysisSelect?.value || "year";
+    const allExpenses = getVisibleVacationExpenses();
+    const allTrips = (state.data.trips || []).filter(isVisibleTrip);
+
+    let relevantExpenses = [];
+    let relevantTrips = [];
+
+    if (selectedTripId === "year") {
+      relevantExpenses = allExpenses.filter((row) => normalizeDateOnly(row.date).slice(0, 4) === analysisYear);
+      const tripIdSet = new Set(relevantExpenses.map((row) => row.trip_id));
+      relevantTrips = allTrips.filter((trip) => tripIdSet.has(trip.trip_id));
+    } else {
+      relevantExpenses = allExpenses.filter((row) => row.trip_id === selectedTripId);
+      const trip = getTripById(selectedTripId);
+      relevantTrips = trip ? [trip] : [];
+    }
+
+    const categories = {
+      Transport: 0,
+      Unterkunft: 0,
+      Essen: 0,
+      Aktivitäten: 0
+    };
+
+    relevantExpenses.forEach((row) => {
+      const bucket = getVacationCategoryBucket(row);
+      if (categories[bucket] != null) {
+        categories[bucket] += getCurrentUserAmount(row);
+      }
+    });
+
+    const totalCost = Object.values(categories).reduce((sum, value) => sum + value, 0);
+
+    const totalDays = relevantTrips.reduce((sum, trip) => sum + Number(trip.days || 0), 0);
+    const costPerDay = totalDays > 0 ? totalCost / totalDays : 0;
+
+    return {
+      selectedTripId,
+      relevantTrips,
+      categories,
+      totalCost,
+      totalDays,
+      costPerDay
+    };
+  }
+
+  function computeVacationLast5TripsData() {
+    const trips = (state.data.trips || [])
+      .filter(isVisibleTrip)
+      .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")))
+      .slice(0, 5);
+
+    const expenses = getVisibleVacationExpenses();
+
+    const labels = [];
+    const transport = [];
+    const unterkunft = [];
+    const essen = [];
+    const aktivitaeten = [];
+
+    trips.forEach((trip) => {
+      labels.push(trip.title || trip.destination || trip.trip_id);
+
+      const cat = {
+        Transport: 0,
+        Unterkunft: 0,
+        Essen: 0,
+        Aktivitäten: 0
+      };
+
+      expenses
+        .filter((row) => row.trip_id === trip.trip_id)
+        .forEach((row) => {
+          const bucket = getVacationCategoryBucket(row);
+          if (cat[bucket] != null) cat[bucket] += getCurrentUserAmount(row);
+        });
+
+      transport.push(cat.Transport);
+      unterkunft.push(cat.Unterkunft);
+      essen.push(cat.Essen);
+      aktivitaeten.push(cat.Aktivitäten);
+    });
+
+    return { labels, transport, unterkunft, essen, aktivitaeten };
+  }
+
+  function renderVacationOverview() {
+    const data = computeVacationOverviewData();
+
+    if (els.vacationTotalCost) {
+      els.vacationTotalCost.textContent = currency(data.totalCost);
+    }
+    if (els.vacationCostPerDay) {
+      els.vacationCostPerDay.textContent = currency(data.costPerDay);
+    }
+    if (els.vacationTripCount) {
+      els.vacationTripCount.textContent = String(data.relevantTrips.length);
+    }
+
+    if (els.vacationKpiTableBody) {
+      const total = data.totalCost || 1;
+      const rows = Object.entries(data.categories).map(([name, value]) => `
+        <tr>
+          <td>${escapeHtml(name)}</td>
+          <td>${escapeHtml(currency(value))}</td>
+          <td>${escapeHtml(percent((value / total) * 100))}</td>
+        </tr>
+      `).join("");
+
+      els.vacationKpiTableBody.innerHTML = rows || '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
+    }
+
+    if (els.vacationDaysTableBody) {
+      const label = data.selectedTripId === "year" ? "Urlaubstage im Jahr" : "Urlaubstage";
+      els.vacationDaysTableBody.innerHTML = `
+        <tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(data.totalDays || 0))}</td></tr>
+        <tr><td>Relevante Urlaube</td><td>${escapeHtml(String(data.relevantTrips.length))}</td></tr>
+        <tr><td>Kosten pro Urlaubstag</td><td>${escapeHtml(currency(data.costPerDay))}</td></tr>
+      `;
+    }
+
+    const chartData = computeVacationLast5TripsData();
+
+    ensureChart("vacationCompositionChart", "vacationCompositionChart", {
+      type: "bar",
+      data: {
+        labels: chartData.labels,
+        datasets: [
+          { label: "Transport", data: chartData.transport, backgroundColor: "rgba(79,124,255,.82)" },
+          { label: "Unterkunft", data: chartData.unterkunft, backgroundColor: "rgba(255,190,61,.82)" },
+          { label: "Essen", data: chartData.essen, backgroundColor: "rgba(19,194,150,.82)" },
+          { label: "Aktivitäten", data: chartData.aktivitaeten, backgroundColor: "rgba(255,109,122,.82)" }
+        ]
+      },
+      options: chartOptions(true)
+    });
+  }
+
+  function getHousingTransactionRowsForMonth(month) {
+    return (state.data.transactions || [])
+      .filter((row) => String(row.is_deleted || "").toLowerCase() !== "ja")
+      .filter(isExpenseBooking)
+      .filter((row) => String(row.main_category || "") === "Wohnen")
+      .filter((row) => String(row.sub_category || "") !== "Kaution")
+      .filter((row) => monthFromDate(row.month_key || row.date) === month);
+  }
+
+  function getHousingFixedRowsForMonth(month) {
+    return (state.data.fixedCosts || [])
+      .filter((row) => String(row.is_deleted || "").toLowerCase() !== "ja")
+      .filter((row) => String(row.main_category || "") === "Wohnen")
+      .filter((row) => String(row.sub_category || "") !== "Kaution")
+      .filter((row) => {
+        const startMonth = monthFromDate(row.start_month || "");
+        const endMonth = monthFromDate(row.end_month || "");
+        if (startMonth && month < startMonth) return false;
+        if (endMonth && month > endMonth) return false;
+        return true;
+      });
+  }
+
+  function getCombinedHousingCategoryMapForMonth(month) {
+    const map = new Map();
+
+    getHousingTransactionRowsForMonth(month).forEach((row) => {
+      const key = row.sub_category || "Ohne Unterkategorie";
+      map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
+    });
+
+    getHousingFixedRowsForMonth(month).forEach((row) => {
+      const key = row.sub_category || "Ohne Unterkategorie";
+      map.set(key, (map.get(key) || 0) + normalizeFrequency(row.amount, row.frequency));
+    });
+
+    return map;
+  }
+
+  function computeHousingOverviewData() {
+    const analysisMonth = selectedAnalysisMonth();
+    const months = housingMonthRange();
+
+    const monthMap = getCombinedHousingCategoryMapForMonth(analysisMonth);
+    const monthTotal = [...monthMap.values()].reduce((sum, value) => sum + value, 0);
+
+    const totalByCategory = new Map();
+    const totalPerMonth = [];
+
+    months.forEach((month) => {
+      const map = getCombinedHousingCategoryMapForMonth(month);
+      const monthValue = [...map.values()].reduce((sum, value) => sum + value, 0);
+      totalPerMonth.push(monthValue);
+
+      map.forEach((value, key) => {
+        totalByCategory.set(key, (totalByCategory.get(key) || 0) + value);
+      });
+    });
+
+    const averageTotal = months.length ? totalPerMonth.reduce((sum, value) => sum + value, 0) / months.length : 0;
+
+    const averageMap = new Map();
+    totalByCategory.forEach((value, key) => {
+      averageMap.set(key, months.length ? value / months.length : 0);
+    });
+
+    return {
+      analysisMonth,
+      months,
+      monthMap,
+      monthTotal,
+      averageMap,
+      averageTotal,
+      categoryCount: new Set([...monthMap.keys(), ...averageMap.keys()]).size
+    };
+  }
+
+  function renderHousingTable(tableBody, valueMap, totalValue, mode, valueLabel) {
+    if (!tableBody) return;
+
+    const entries = [...valueMap.entries()].sort((a, b) => b[1] - a[1]);
+
+    tableBody.innerHTML = entries.length
+      ? entries.map(([name, value]) => `
+          <tr>
+            <td>${escapeHtml(name)}</td>
+            <td>${escapeHtml(mode === "percent" ? percent(totalValue ? (value / totalValue) * 100 : 0) : currency(value))}</td>
+            <td>${escapeHtml(percent(totalValue ? (value / totalValue) * 100 : 0))}</td>
+          </tr>
+        `).join("")
+      : `<tr><td colspan="3" class="table-empty">Keine ${escapeHtml(valueLabel)} vorhanden</td></tr>`;
+  }
+
+  function renderHousingOverview() {
+    const data = computeHousingOverviewData();
+    const mode = housingDisplayMode();
+
+    if (els.housingMonthTotal) {
+      els.housingMonthTotal.textContent = currency(data.monthTotal);
+    }
+    if (els.housingAverageTotal) {
+      els.housingAverageTotal.textContent = currency(data.averageTotal);
+    }
+    if (els.housingCategoryCount) {
+      els.housingCategoryCount.textContent = String(data.categoryCount || 0);
+    }
+
+    renderHousingTable(els.housingMonthTableBody, data.monthMap, data.monthTotal, mode, "Daten");
+    renderHousingTable(els.housingAverageTableBody, data.averageMap, data.averageTotal, mode, "Daten");
+
+    const categoryKeys = [...new Set(
+      data.months.flatMap((month) => [...getCombinedHousingCategoryMapForMonth(month).keys()])
+    )].sort();
+
+    const datasets = categoryKeys.map((key, idx) => {
+      const rawValues = data.months.map((month) => getCombinedHousingCategoryMapForMonth(month).get(key) || 0);
+      const displayValues = mode === "percent"
+        ? rawValues.map((value, i) => {
+            const total = [...getCombinedHousingCategoryMapForMonth(data.months[i]).values()].reduce((sum, v) => sum + v, 0);
+            return total ? (value / total) * 100 : 0;
+          })
+        : rawValues;
+
+      return {
+        label: key,
+        data: displayValues,
+        backgroundColor: [
+          "rgba(79,124,255,.82)",
+          "rgba(255,190,61,.82)",
+          "rgba(19,194,150,.82)",
+          "rgba(255,109,122,.82)",
+          "rgba(97,201,255,.82)",
+          "rgba(159,122,234,.82)",
+          "rgba(249,115,22,.82)"
+        ][idx % 7]
+      };
+    });
+
+    ensureChart("housingTrendChart", "housingTrendChart", {
+      type: "bar",
+      data: {
+        labels: data.months,
+        datasets
+      },
+      options: chartOptions(true)
+    });
   }
 
   function renderTransactionsTable() {
@@ -1181,7 +1545,10 @@
 
   function renderAll() {
     fillCategoryFilter();
+    populateVacationAnalysisSelect();
     renderDashboard();
+    renderHousingOverview();
+    renderVacationOverview();
     renderTransactionsTable();
     renderTripsTable();
     renderTripExpensesTable();
@@ -1241,6 +1608,8 @@
       data.counterparty = normalizePersonName(data.counterparty);
       data.split_enabled = "nein";
       data.split_percent = "100";
+      data.main_category = "Verrechnung";
+      data.sub_category = "Saldoausgleich";
     } else {
       data.counterparty = "-";
     }
@@ -1658,7 +2027,10 @@
       els.filterMainCategory,
       els.rangeMonths,
       els.chartMode,
-      els.compositionMode
+      els.compositionMode,
+      els.housingRangeMonths,
+      els.housingDisplayMode,
+      els.vacationAnalysisSelect
     ].filter(Boolean).forEach((element) => {
       element.addEventListener("change", renderAll);
     });
