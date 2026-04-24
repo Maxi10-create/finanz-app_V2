@@ -98,20 +98,17 @@
     transactionSplitEnabled: document.getElementById("transactionSplitEnabled"),
     transactionSplitPercent: document.getElementById("transactionSplitPercent"),
 
-    housingRangeMonths: document.getElementById("housingRangeMonths"),
     housingDisplayMode: document.getElementById("housingDisplayMode"),
     housingMonthTotal: document.getElementById("housingMonthTotal"),
     housingAverageTotal: document.getElementById("housingAverageTotal"),
     housingCategoryCount: document.getElementById("housingCategoryCount"),
     housingMonthTableBody: document.querySelector("#housingMonthTable tbody"),
-    housingAverageTableBody: document.querySelector("#housingAverageTable tbody"),
 
+    vacationYearSelect: document.getElementById("vacationYearSelect"),
     vacationAnalysisSelect: document.getElementById("vacationAnalysisSelect"),
     vacationTotalCost: document.getElementById("vacationTotalCost"),
-    vacationCostPerDay: document.getElementById("vacationCostPerDay"),
     vacationTripCount: document.getElementById("vacationTripCount"),
-    vacationKpiTableBody: document.querySelector("#vacationKpiTable tbody"),
-    vacationDaysTableBody: document.querySelector("#vacationDaysTable tbody")
+    vacationKpiTableBody: document.querySelector("#vacationKpiTable tbody")
   };
 
   const editState = {
@@ -144,14 +141,20 @@
   const monthFromDate = (value) => String(value || "").slice(0, 7);
   const normalizeDateOnly = (value) => String(value || "").slice(0, 10);
 
+  function currentYear() {
+    return new Date().getFullYear();
+  }
+
   function toPercent(value, income) {
     return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
   }
 
   function normalizePersonName(name) {
     const raw = String(name || "").trim().toLowerCase();
+
     if (raw === "maximilian hofer" || raw === "hofer maximilian") return PERSON_A;
     if (raw === "jana march") return PERSON_B;
+
     return String(name || "").trim();
   }
 
@@ -192,10 +195,6 @@
 
   function housingDisplayMode() {
     return els.housingDisplayMode?.value || "currency";
-  }
-
-  function housingRangeMonths() {
-    return Number(els.housingRangeMonths?.value || 12);
   }
 
   function showMessage(text, type = "error") {
@@ -271,9 +270,6 @@
     if (els.rangeMonths && !els.rangeMonths.value) {
       els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
     }
-    if (els.housingRangeMonths && !els.housingRangeMonths.value) {
-      els.housingRangeMonths.value = "12";
-    }
 
     const today = new Date().toISOString().slice(0, 10);
     const transactionDate = els.transactionForm?.querySelector('input[name="date"]');
@@ -317,16 +313,43 @@
     return months;
   }
 
-  function housingMonthRange() {
-    const count = housingRangeMonths();
-    const months = [];
-    const [endYear, endMonth] = selectedAnalysisMonth().split("-").map(Number);
+  function housingRangeMonths() {
+    const start = "2026-01";
+    const end = selectedAnalysisMonth();
+
+    const [startYear, startMonth] = start.split("-").map(Number);
+    const [endYear, endMonth] = end.split("-").map(Number);
+
+    const startDate = new Date(startYear, startMonth - 1, 1);
     const endDate = new Date(endYear, endMonth - 1, 1);
 
-    for (let i = count - 1; i >= 0; i -= 1) {
-      const d = new Date(endDate.getFullYear(), endDate.getMonth() - i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    let months = 0;
+    let cursor = new Date(startDate);
+
+    while (cursor <= endDate) {
+      months += 1;
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
+
+    return months;
+  }
+
+  function housingMonthRange() {
+    const start = "2026-01";
+    const end = selectedAnalysisMonth();
+
+    const months = [];
+    const [startYear, startMonth] = start.split("-").map(Number);
+    const [endYear, endMonth] = end.split("-").map(Number);
+
+    let cursor = new Date(startYear, startMonth - 1, 1);
+    const endDate = new Date(endYear, endMonth - 1, 1);
+
+    while (cursor <= endDate) {
+      months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+
     return months;
   }
 
@@ -493,13 +516,10 @@
 
   function calculateSettlementEffect(row) {
     if (!isSettlement(row)) return 0;
-
     const me = currentUserName();
     const amount = Number(row.amount || 0);
     const paidBy = normalizePersonName(row.paid_by || "");
-
-    if (paidBy === me) return amount;
-    return -amount;
+    return paidBy === me ? amount : -amount;
   }
 
   function calculatePeerBalanceForMonth(month) {
@@ -645,21 +665,68 @@
       .join("");
   }
 
-  function populateVacationAnalysisSelect() {
-    if (!els.vacationAnalysisSelect) return;
+  function getVacationAvailableYears() {
+    const years = new Set();
 
-    const current = els.vacationAnalysisSelect.value;
+    (state.data.trips || []).filter(isVisibleTrip).forEach((trip) => {
+      const year = String(trip.start_date || "").slice(0, 4);
+      if (year) years.add(year);
+    });
+
+    (state.data.tripExpenses || []).filter(isVisibleTrip).forEach((row) => {
+      const year = String(row.date || "").slice(0, 4);
+      if (year) years.add(year);
+    });
+
+    return [...years].sort((a, b) => Number(b) - Number(a));
+  }
+
+  function selectedVacationYear() {
+    return els.vacationYearSelect?.value || String(currentYear());
+  }
+
+  function populateVacationAnalysisSelect() {
+    if (!els.vacationYearSelect || !els.vacationAnalysisSelect) return;
+
+    const availableYears = getVacationAvailableYears();
+    const currentYearString = String(currentYear());
+
+    if (!els.vacationYearSelect.dataset.initialized) {
+      const defaultYear = availableYears.includes(currentYearString)
+        ? currentYearString
+        : (availableYears[0] || currentYearString);
+
+      els.vacationYearSelect.innerHTML = availableYears.length
+        ? availableYears.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
+        : `<option value="${escapeHtml(currentYearString)}">${escapeHtml(currentYearString)}</option>`;
+
+      els.vacationYearSelect.value = defaultYear;
+      els.vacationYearSelect.dataset.initialized = "true";
+    } else {
+      const currentSelectedYear = els.vacationYearSelect.value || currentYearString;
+      els.vacationYearSelect.innerHTML = availableYears.length
+        ? availableYears.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
+        : `<option value="${escapeHtml(currentYearString)}">${escapeHtml(currentYearString)}</option>`;
+
+      els.vacationYearSelect.value = availableYears.includes(currentSelectedYear)
+        ? currentSelectedYear
+        : (availableYears.includes(currentYearString) ? currentYearString : (availableYears[0] || currentYearString));
+    }
+
+    const selectedYear = selectedVacationYear();
+    const currentTripSelection = els.vacationAnalysisSelect.value;
+
     const trips = (state.data.trips || [])
       .filter(isVisibleTrip)
+      .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear)
       .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
 
     els.vacationAnalysisSelect.innerHTML =
-      '<option value="year">Alle Urlaube aktuelles Jahr</option>' +
+      '<option value="year">Alle Urlaube im gewählten Jahr</option>' +
       trips.map((row) => `<option value="${escapeHtml(row.trip_id)}">${escapeHtml(row.title)} – ${escapeHtml(row.destination)}</option>`).join("");
 
-    if ([ "year", ...trips.map((t) => t.trip_id) ].includes(current)) {
-      els.vacationAnalysisSelect.value = current;
-    }
+    const validValues = ["year", ...trips.map((t) => t.trip_id)];
+    els.vacationAnalysisSelect.value = validValues.includes(currentTripSelection) ? currentTripSelection : "year";
   }
 
   function getTransactionsForTable() {
@@ -1138,7 +1205,7 @@
   }
 
   function computeVacationOverviewData() {
-    const analysisYear = selectedAnalysisMonth().slice(0, 4);
+    const selectedYear = selectedVacationYear();
     const selectedTripId = els.vacationAnalysisSelect?.value || "year";
     const allExpenses = getVisibleVacationExpenses();
     const allTrips = (state.data.trips || []).filter(isVisibleTrip);
@@ -1147,7 +1214,7 @@
     let relevantTrips = [];
 
     if (selectedTripId === "year") {
-      relevantExpenses = allExpenses.filter((row) => normalizeDateOnly(row.date).slice(0, 4) === analysisYear);
+      relevantExpenses = allExpenses.filter((row) => normalizeDateOnly(row.date).slice(0, 4) === selectedYear);
       const tripIdSet = new Set(relevantExpenses.map((row) => row.trip_id));
       relevantTrips = allTrips.filter((trip) => tripIdSet.has(trip.trip_id));
     } else {
@@ -1172,16 +1239,12 @@
 
     const totalCost = Object.values(categories).reduce((sum, value) => sum + value, 0);
 
-    const totalDays = relevantTrips.reduce((sum, trip) => sum + Number(trip.days || 0), 0);
-    const costPerDay = totalDays > 0 ? totalCost / totalDays : 0;
-
     return {
       selectedTripId,
+      selectedYear,
       relevantTrips,
       categories,
-      totalCost,
-      totalDays,
-      costPerDay
+      totalCost
     };
   }
 
@@ -1231,9 +1294,6 @@
     if (els.vacationTotalCost) {
       els.vacationTotalCost.textContent = currency(data.totalCost);
     }
-    if (els.vacationCostPerDay) {
-      els.vacationCostPerDay.textContent = currency(data.costPerDay);
-    }
     if (els.vacationTripCount) {
       els.vacationTripCount.textContent = String(data.relevantTrips.length);
     }
@@ -1249,15 +1309,6 @@
       `).join("");
 
       els.vacationKpiTableBody.innerHTML = rows || '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
-    }
-
-    if (els.vacationDaysTableBody) {
-      const label = data.selectedTripId === "year" ? "Urlaubstage im Jahr" : "Urlaubstage";
-      els.vacationDaysTableBody.innerHTML = `
-        <tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(data.totalDays || 0))}</td></tr>
-        <tr><td>Relevante Urlaube</td><td>${escapeHtml(String(data.relevantTrips.length))}</td></tr>
-        <tr><td>Kosten pro Urlaubstag</td><td>${escapeHtml(currency(data.costPerDay))}</td></tr>
-      `;
     }
 
     const chartData = computeVacationLast5TripsData();
@@ -1336,21 +1387,17 @@
       });
     });
 
-    const averageTotal = months.length ? totalPerMonth.reduce((sum, value) => sum + value, 0) / months.length : 0;
-
-    const averageMap = new Map();
-    totalByCategory.forEach((value, key) => {
-      averageMap.set(key, months.length ? value / months.length : 0);
-    });
+    const averageTotal = months.length
+      ? totalPerMonth.reduce((sum, value) => sum + value, 0) / months.length
+      : 0;
 
     return {
       analysisMonth,
       months,
       monthMap,
       monthTotal,
-      averageMap,
       averageTotal,
-      categoryCount: new Set([...monthMap.keys(), ...averageMap.keys()]).size
+      categoryCount: new Set([...monthMap.keys(), ...totalByCategory.keys()]).size
     };
   }
 
@@ -1385,43 +1432,65 @@
     }
 
     renderHousingTable(els.housingMonthTableBody, data.monthMap, data.monthTotal, mode, "Daten");
-    renderHousingTable(els.housingAverageTableBody, data.averageMap, data.averageTotal, mode, "Daten");
 
-    const categoryKeys = [...new Set(
+    const allCategoryKeys = [...new Set(
       data.months.flatMap((month) => [...getCombinedHousingCategoryMapForMonth(month).keys()])
     )].sort();
 
-    const datasets = categoryKeys.map((key, idx) => {
-      const rawValues = data.months.map((month) => getCombinedHousingCategoryMapForMonth(month).get(key) || 0);
-      const displayValues = mode === "percent"
-        ? rawValues.map((value, i) => {
-            const total = [...getCombinedHousingCategoryMapForMonth(data.months[i]).values()].reduce((sum, v) => sum + v, 0);
-            return total ? (value / total) * 100 : 0;
-          })
-        : rawValues;
+    const totalSeriesRaw = data.months.map((month) =>
+      [...getCombinedHousingCategoryMapForMonth(month).values()].reduce((sum, value) => sum + value, 0)
+    );
 
-      return {
-        label: key,
-        data: displayValues,
-        backgroundColor: [
-          "rgba(79,124,255,.82)",
-          "rgba(255,190,61,.82)",
-          "rgba(19,194,150,.82)",
-          "rgba(255,109,122,.82)",
-          "rgba(97,201,255,.82)",
-          "rgba(159,122,234,.82)",
-          "rgba(249,115,22,.82)"
-        ][idx % 7]
-      };
-    });
+    const totalSeries = mode === "percent"
+      ? totalSeriesRaw.map(() => 100)
+      : totalSeriesRaw;
+
+    const datasets = [
+      {
+        label: "Gesamtkosten Wohnen",
+        data: totalSeries,
+        borderColor: "rgba(255,255,255,0.95)",
+        backgroundColor: "rgba(255,255,255,0.15)",
+        fill: false,
+        tension: 0.25
+      },
+      ...allCategoryKeys.map((key, idx) => {
+        const rawValues = data.months.map((month) => getCombinedHousingCategoryMapForMonth(month).get(key) || 0);
+        const displayValues = mode === "percent"
+          ? rawValues.map((value, i) => {
+              const total = totalSeriesRaw[i] || 0;
+              return total ? (value / total) * 100 : 0;
+            })
+          : rawValues;
+
+        const colors = [
+          "rgba(79,124,255,0.95)",
+          "rgba(255,190,61,0.95)",
+          "rgba(19,194,150,0.95)",
+          "rgba(255,109,122,0.95)",
+          "rgba(97,201,255,0.95)",
+          "rgba(159,122,234,0.95)",
+          "rgba(249,115,22,0.95)"
+        ];
+
+        return {
+          label: key,
+          data: displayValues,
+          borderColor: colors[idx % colors.length],
+          backgroundColor: colors[idx % colors.length],
+          fill: false,
+          tension: 0.25
+        };
+      })
+    ];
 
     ensureChart("housingTrendChart", "housingTrendChart", {
-      type: "bar",
+      type: "line",
       data: {
         labels: data.months,
         datasets
       },
-      options: chartOptions(true)
+      options: chartOptions()
     });
   }
 
@@ -2028,8 +2097,8 @@
       els.rangeMonths,
       els.chartMode,
       els.compositionMode,
-      els.housingRangeMonths,
       els.housingDisplayMode,
+      els.vacationYearSelect,
       els.vacationAnalysisSelect
     ].filter(Boolean).forEach((element) => {
       element.addEventListener("change", renderAll);
@@ -2058,7 +2127,10 @@
   }
 
   async function init() {
-    await initAuth();
+    if (typeof initAuth === "function") {
+      await initAuth();
+    }
+
     const user = currentUser();
     if (!user) return;
 
