@@ -2,6 +2,9 @@
   const DEFAULT_START_MONTH = "2026-01";
   const DEFAULT_RANGE_MONTHS = 12;
 
+  const PERSON_A = "Maximilian Hofer";
+  const PERSON_B = "Jana March";
+
   const state = {
     activeApiBaseUrl: null,
     charts: {},
@@ -131,9 +134,15 @@
   }
 
   function normalizePersonName(name) {
-    const value = String(name || "").trim().toLowerCase();
-    if (value === "hofer maximilian" || value === "maximilian hofer") return "Hofer Maximilian";
-    if (value === "jana march") return "Jana March";
+    const raw = String(name || "").trim().toLowerCase();
+
+    if (
+      raw === "maximilian hofer" ||
+      raw === "hofer maximilian"
+    ) return PERSON_A;
+
+    if (raw === "jana march") return PERSON_B;
+
     return String(name || "").trim();
   }
 
@@ -142,12 +151,24 @@
   }
 
   function currentUserName() {
-    const raw = currentUser()?.displayName || CONFIG.USER_NAME || "Hofer Maximilian";
+    const raw = currentUser()?.displayName || CONFIG.USER_NAME || PERSON_A;
     return normalizePersonName(raw);
   }
 
   function otherUserName() {
-    return currentUserName() === "Jana March" ? "Hofer Maximilian" : "Jana March";
+    return currentUserName() === PERSON_B ? PERSON_A : PERSON_B;
+  }
+
+  function normalizeRecordNames(record) {
+    const obj = { ...record };
+    if ("owner_user" in obj) obj.owner_user = normalizePersonName(obj.owner_user);
+    if ("paid_by" in obj) obj.paid_by = normalizePersonName(obj.paid_by);
+    if ("counterparty" in obj) {
+      obj.counterparty = obj.counterparty === "-" ? "-" : normalizePersonName(obj.counterparty);
+    }
+    if ("created_by" in obj) obj.created_by = normalizePersonName(obj.created_by);
+    if ("updated_by" in obj) obj.updated_by = normalizePersonName(obj.updated_by);
+    return obj;
   }
 
   function isPercentMode() {
@@ -174,12 +195,12 @@
 
   function withClientKeys(raw) {
     return {
-      income: (raw.income || []).map((row, idx) => ({ ...row, _clientKey: `income_${idx}_${row.id || ""}` })),
-      transactions: (raw.transactions || []).map((row, idx) => ({ ...row, _clientKey: `transaction_${idx}_${row.id || ""}` })),
-      trips: (raw.trips || []).map((row, idx) => ({ ...row, _clientKey: `trip_${idx}_${row.trip_id || ""}` })),
-      tripExpenses: (raw.tripExpenses || []).map((row, idx) => ({ ...row, _clientKey: `tripExpense_${idx}_${row.id || ""}` })),
-      categories: (raw.categories || []).map((row, idx) => ({ ...row, _clientKey: `category_${idx}_${row.id || ""}` })),
-      fixedCosts: (raw.fixedCosts || []).map((row, idx) => ({ ...row, _clientKey: `fixedCost_${idx}_${row.id || ""}` }))
+      income: (raw.income || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `income_${idx}_${row.id || ""}` })),
+      transactions: (raw.transactions || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `transaction_${idx}_${row.id || ""}` })),
+      trips: (raw.trips || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `trip_${idx}_${row.trip_id || ""}` })),
+      tripExpenses: (raw.tripExpenses || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `tripExpense_${idx}_${row.id || ""}` })),
+      categories: (raw.categories || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `category_${idx}_${row.id || ""}` })),
+      fixedCosts: (raw.fixedCosts || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `fixedCost_${idx}_${row.id || ""}` }))
     };
   }
 
@@ -325,7 +346,7 @@
 
     const user = currentUserName();
     const owner = normalizePersonName(row.owner_user || "");
-    const counterparty = normalizePersonName(row.counterparty || "");
+    const counterparty = row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
 
     if (owner === user) return true;
     if (isSettlement(row) && counterparty === user) return true;
@@ -447,7 +468,7 @@
     const amount = Number(row.amount || 0);
     const owner = normalizePersonName(row.owner_user || "");
     const paidBy = normalizePersonName(row.paid_by || "");
-    const counterparty = normalizePersonName(row.counterparty || other);
+    const counterparty = row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
 
     if (owner === me && counterparty === other) {
       if (paidBy === me) return -amount;
@@ -717,38 +738,6 @@
           <div class="kpi-label">${escapeHtml(label)}</div>
           <div class="kpi-value">${escapeHtml(value)}</div>
           <div class="kpi-sub">${escapeHtml(sub)}</div>
-        </div>
-      `).join("");
-    }
-
-    if (els.monthlySummary) {
-      els.monthlySummary.innerHTML = [
-        ["Analysemonat", month],
-        ["Haushaltsausgaben", currency(txTotal)],
-        ["Urlaubsausgaben", currency(tripTotal)],
-        ["Fixkosten", currency(fixedCosts)],
-        ["Variable Kosten", currency(variableCosts)],
-        ["Ausgaben gesamt", currency(totalExpenses)],
-        ["Überschuss", currency(available)]
-      ].map(([k, v]) => `
-        <div class="summary-row">
-          <div class="key">${escapeHtml(k)}</div>
-          <div class="val">${escapeHtml(v)}</div>
-        </div>
-      `).join("");
-    }
-
-    if (els.insightList) {
-      els.insightList.innerHTML = [
-        ["Saldo Monat", currency(peerBalanceMonth)],
-        ["Offener Gesamtsaldo", currency(peerBalanceOpen)],
-        ["Fixkosten aktiv", `${activeFixedCostsForMonth(month).length} Positionen`],
-        ["Haushaltstransaktionen", `${txRows.length}`],
-        ["Urlaubstransaktionen", `${tripRows.length}`]
-      ].map(([k, v]) => `
-        <div class="summary-row">
-          <div class="key">${escapeHtml(k)}</div>
-          <div class="val">${escapeHtml(v)}</div>
         </div>
       `).join("");
     }
@@ -1072,7 +1061,7 @@
             <td>${escapeHtml(row.title)}</td>
             <td>${escapeHtml(
               isSettlement(row)
-                ? `Verrechnung / ${row.counterparty || "Saldoausgleich"}`
+                ? `Verrechnung / ${row.counterparty || PERSON_B}`
                 : `${row.main_category} / ${row.sub_category}`
             )}</td>
             <td>${escapeHtml(isSettlement(row) ? currency(row.amount) : currency(getCurrentUserAmount(row)))}</td>
@@ -1228,23 +1217,29 @@
   function formToObject(form) {
     const data = Object.fromEntries(new FormData(form).entries());
     const user = currentUser();
+    const normalizedUser = currentUserName();
 
     delete data._clientKey;
 
     if (data.date && !data.month_key) data.month_key = data.date.slice(0, 7);
 
-    if (data.booking_type === "settlement" && !data.counterparty) {
-      data.counterparty = otherUserName();
+    if (data.booking_type === "settlement") {
+      if (!data.counterparty || data.counterparty === "-") {
+        data.counterparty = otherUserName();
+      }
+      data.counterparty = normalizePersonName(data.counterparty);
+      data.split_enabled = "nein";
+      data.split_percent = "100";
+    } else {
+      data.counterparty = "-";
     }
 
+    if (data.paid_by) data.paid_by = normalizePersonName(data.paid_by);
+
     if (user) {
-      const normalizedUser = currentUserName();
-      if (!data.created_by) data.created_by = user.displayName;
-      data.updated_by = user.displayName;
-      if (!data.owner_user) data.owner_user = normalizedUser;
-      data.owner_user = normalizePersonName(data.owner_user);
-      if (data.paid_by) data.paid_by = normalizePersonName(data.paid_by);
-      if (data.counterparty) data.counterparty = normalizePersonName(data.counterparty);
+      data.owner_user = normalizedUser;
+      data.created_by = normalizePersonName(data.created_by || user.displayName || normalizedUser);
+      data.updated_by = normalizedUser;
     }
 
     return data;
@@ -1287,8 +1282,7 @@
   function updateTransactionFormVisibility() {
     const isSettlementType = (els.bookingType?.value || "expense") === "settlement";
 
-    setLabelHidden(els.transactionCounterparty, false);
-
+    setLabelHidden(els.transactionCounterparty, !isSettlementType);
     setLabelHidden(els.bookingMainCategory, isSettlementType);
     setLabelHidden(els.bookingSubCategory, isSettlementType);
     setLabelHidden(els.transactionSplitEnabled, isSettlementType);
@@ -1302,9 +1296,11 @@
     if (isSettlementType) {
       if (els.transactionSplitEnabled) els.transactionSplitEnabled.value = "nein";
       if (els.transactionSplitPercent) els.transactionSplitPercent.value = "100";
-      if (els.transactionCounterparty && !els.transactionCounterparty.value) {
+      if (els.transactionCounterparty && (!els.transactionCounterparty.value || els.transactionCounterparty.value === "-")) {
         els.transactionCounterparty.value = otherUserName();
       }
+    } else {
+      if (els.transactionCounterparty) els.transactionCounterparty.value = "-";
     }
   }
 
@@ -1322,7 +1318,7 @@
       if (splitField) splitField.value = "100";
       if (splitEnabledField) splitEnabledField.value = "nein";
       if (bookingTypeField) bookingTypeField.value = "expense";
-      if (counterpartyField) counterpartyField.value = otherUserName();
+      if (counterpartyField) counterpartyField.value = "-";
 
       if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
       if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
