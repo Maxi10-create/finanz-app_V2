@@ -471,14 +471,24 @@
     const counterparty =
       row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
   
+    // Fall A:
+    // Ich habe die Ausgleichsbuchung erstellt, Gegenpartei ist die andere Person
     if (owner === me && counterparty === other) {
+      // Ich zahle an die andere Person -> meine negative Schuld wird kleiner
       if (paidBy === me) return amount;
+  
+      // Die andere Person zahlt an mich -> meine positive Forderung wird kleiner
       if (paidBy === other) return -amount;
     }
   
+    // Fall B:
+    // Die andere Person hat die Ausgleichsbuchung erstellt, ich bin die Gegenpartei
     if (owner === other && counterparty === me) {
-      if (paidBy === me) return -amount;
-      if (paidBy === other) return amount;
+      // Ich zahle an die andere Person -> meine negative Schuld wird kleiner
+      if (paidBy === me) return amount;
+  
+      // Die andere Person zahlt an mich -> meine positive Forderung wird kleiner
+      if (paidBy === other) return -amount;
     }
   
     return 0;
