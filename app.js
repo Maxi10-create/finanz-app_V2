@@ -176,6 +176,7 @@
     if ("counterparty" in obj) obj.counterparty = obj.counterparty === "-" ? "-" : normalizePersonName(obj.counterparty);
     if ("created_by" in obj) obj.created_by = normalizePersonName(obj.created_by);
     if ("updated_by" in obj) obj.updated_by = normalizePersonName(obj.updated_by);
+    if ("travel_with" in obj && obj.travel_with != null) obj.travel_with = normalizePersonName(obj.travel_with);
     return obj;
   }
 
@@ -400,14 +401,53 @@
     return isSharedTrip(row);
   }
 
+  function getUserShareFromAmount(row, baseAmount) {
+    if (isSettlement(row)) return 0;
+
+    const amount = Number(baseAmount || 0);
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+    const splitPercent = Number(row.split_percent || 100);
+    const owner = normalizePersonName(row.owner_user || "");
+    const me = currentUserName();
+
+    if (!splitEnabled) {
+      return owner === me ? amount : 0;
+    }
+
+    const ownerShare = amount * (splitPercent / 100);
+    const otherShare = amount - ownerShare;
+    return owner === me ? ownerShare : otherShare;
+  }
+
+  function getCurrentUserAmount(row) {
+    return getUserShareFromAmount(row, row.amount);
+  }
+
+  function isRelevantTripExpenseForUser(row) {
+    if (!row) return false;
+    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+
+    const me = currentUserName();
+    const owner = normalizePersonName(row.owner_user || "");
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+
+    if (owner === me) return true;
+    if (!splitEnabled) return false;
+
+    return getCurrentUserAmount(row) > 0;
+  }
+
   function isVisibleTripExpense(row) {
     if (!row) return false;
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const trip = getTripById(row.trip_id);
-    if (!trip) return false;
 
-    return isVisibleTrip(trip);
+    if (trip && isVisibleTrip(trip)) {
+      return true;
+    }
+
+    return isRelevantTripExpenseForUser(row);
   }
 
   function isVisibleTransaction(row) {
@@ -447,28 +487,6 @@
     if (!splitEnabled) return false;
 
     return String(row.visible_to_other || "").toLowerCase() === "ja";
-  }
-
-  function getUserShareFromAmount(row, baseAmount) {
-    if (isSettlement(row)) return 0;
-
-    const amount = Number(baseAmount || 0);
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    const splitPercent = Number(row.split_percent || 100);
-    const owner = normalizePersonName(row.owner_user || "");
-    const me = currentUserName();
-
-    if (!splitEnabled) {
-      return owner === me ? amount : 0;
-    }
-
-    const ownerShare = amount * (splitPercent / 100);
-    const otherShare = amount - ownerShare;
-    return owner === me ? ownerShare : otherShare;
-  }
-
-  function getCurrentUserAmount(row) {
-    return getUserShareFromAmount(row, row.amount);
   }
 
   function filteredTransactionsForMonth(month) {
