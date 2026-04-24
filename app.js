@@ -462,24 +462,25 @@
 
   function calculateSettlementEffect(row) {
     if (!isSettlement(row)) return 0;
-
+  
     const me = currentUserName();
     const other = otherUserName();
     const amount = Number(row.amount || 0);
     const owner = normalizePersonName(row.owner_user || "");
     const paidBy = normalizePersonName(row.paid_by || "");
-    const counterparty = row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
-
+    const counterparty =
+      row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
+  
     if (owner === me && counterparty === other) {
-      if (paidBy === me) return -amount;
-      if (paidBy === other) return amount;
-    }
-
-    if (owner === other && counterparty === me) {
       if (paidBy === me) return amount;
       if (paidBy === other) return -amount;
     }
-
+  
+    if (owner === other && counterparty === me) {
+      if (paidBy === me) return -amount;
+      if (paidBy === other) return amount;
+    }
+  
     return 0;
   }
 
