@@ -112,7 +112,6 @@
         <div id="messageBox"></div>
       </header>
 
-      <!-- DASHBOARD -->
       <section class="panel active" id="panel-dashboard">
         <div class="hero-grid">
           <div class="hero-card gradient-card">
@@ -215,7 +214,6 @@
         </section>
       </section>
 
-      <!-- WOHNEN -->
       <section class="panel" id="panel-wohnen">
         <section class="card">
           <div class="card-header">
@@ -226,16 +224,6 @@
           </div>
 
           <div class="form-grid compact-form">
-            <label>
-              Wohnen-Zeitraum (Monate)
-              <select id="housingRangeMonths">
-                <option value="12" selected>12</option>
-                <option value="24">24</option>
-                <option value="36">36</option>
-                <option value="72">72</option>
-              </select>
-            </label>
-
             <label>
               Wohnen-Anzeige
               <select id="housingDisplayMode">
@@ -253,9 +241,9 @@
             <div class="hero-sub">Ohne Kaution</div>
           </div>
           <div class="hero-card">
-            <div class="hero-label">Mittelwert pro Monat</div>
+            <div class="hero-label">Mittelwert pro Monat seit 01/2026</div>
             <div class="hero-value" id="housingAverageTotal">0,00 €</div>
-            <div class="hero-sub">Über alle Monate</div>
+            <div class="hero-sub">Über alle Monate ab 01/2026</div>
           </div>
           <div class="hero-card">
             <div class="hero-label">Unterkategorien aktiv</div>
@@ -264,64 +252,51 @@
           </div>
         </div>
 
-        <div class="table-grid">
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Analysemonat Wohnen</h2>
-                <p>Anteil je Unterkategorie</p>
-              </div>
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Analysemonat Wohnen</h2>
+              <p>Anteil je Unterkategorie</p>
             </div>
-            <table class="data-table" id="housingMonthTable">
-              <thead>
-                <tr><th>Unterkategorie</th><th>Wert</th><th>Anteil</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Mittelwert Wohnen</h2>
-                <p>Über alle Monate</p>
-              </div>
-            </div>
-            <table class="data-table" id="housingAverageTable">
-              <thead>
-                <tr><th>Unterkategorie</th><th>Mittelwert</th><th>Anteil</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </section>
-        </div>
+          </div>
+          <table class="data-table" id="housingMonthTable">
+            <thead>
+              <tr><th>Unterkategorie</th><th>Wert</th><th>Anteil</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
 
         <section class="card">
           <div class="card-header">
             <div>
               <h2>Wohnen über Monate</h2>
-              <p>Gesamtkosten und Unterkategorien</p>
+              <p>Gesamtkosten und Unterkategorien als Liniengraph ab 01/2026</p>
             </div>
           </div>
           <canvas id="housingTrendChart"></canvas>
         </section>
       </section>
 
-      <!-- URLAUB -->
       <section class="panel" id="panel-urlaub">
         <section class="card">
           <div class="card-header">
             <div>
               <h2>Urlaubsanalyse</h2>
-              <p>Kennzahlen und Zusammensetzung für aktuelles Jahr oder einzelnen Urlaub</p>
+              <p>Kennzahlen und Zusammensetzung nach Jahr und Urlaub</p>
             </div>
           </div>
 
           <div class="form-grid compact-form">
             <label>
+              Jahr
+              <select id="vacationYearSelect"></select>
+            </label>
+
+            <label>
               Urlaubsauswahl
               <select id="vacationAnalysisSelect">
-                <option value="year" selected>Alle Urlaube aktuelles Jahr</option>
+                <option value="year" selected>Alle Urlaube im gewählten Jahr</option>
               </select>
             </label>
           </div>
@@ -331,12 +306,7 @@
           <div class="hero-card">
             <div class="hero-label">Gesamtkosten Urlaub</div>
             <div class="hero-value" id="vacationTotalCost">0,00 €</div>
-            <div class="hero-sub">Aktuelles Jahr / Auswahl</div>
-          </div>
-          <div class="hero-card">
-            <div class="hero-label">Kosten pro Urlaubstag</div>
-            <div class="hero-value" id="vacationCostPerDay">0,00 €</div>
-            <div class="hero-sub">Für den jeweiligen Nutzer</div>
+            <div class="hero-sub">Gewähltes Jahr / Urlaub</div>
           </div>
           <div class="hero-card">
             <div class="hero-label">Relevante Urlaube</div>
@@ -345,37 +315,20 @@
           </div>
         </div>
 
-        <div class="table-grid">
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Urlaubsanteile</h2>
-                <p>Transport, Unterkunft, Essen, Aktivitäten</p>
-              </div>
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2>Urlaubsanteile</h2>
+              <p>Transport, Unterkunft, Essen, Aktivitäten</p>
             </div>
-            <table class="data-table" id="vacationKpiTable">
-              <thead>
-                <tr><th>Kategorie</th><th>Kosten</th><th>Anteil</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Urlaubstage</h2>
-                <p>Basis für Kosten pro Urlaubstag</p>
-              </div>
-            </div>
-            <table class="data-table" id="vacationDaysTable">
-              <thead>
-                <tr><th>Kennzahl</th><th>Wert</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </section>
-        </div>
+          </div>
+          <table class="data-table" id="vacationKpiTable">
+            <thead>
+              <tr><th>Kategorie</th><th>Kosten</th><th>Anteil</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
 
         <section class="card">
           <div class="card-header">
@@ -518,7 +471,6 @@
         </div>
       </section>
 
-      <!-- BUCHUNGEN -->
       <section class="panel" id="panel-bookings">
         <div class="two-col">
           <section class="card">
@@ -627,7 +579,6 @@
         </div>
       </section>
 
-      <!-- ZENTRALE -->
       <section class="panel" id="panel-zentrale">
         <div class="three-col">
           <section class="card">
