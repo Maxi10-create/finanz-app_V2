@@ -294,41 +294,11 @@
   }
 
   function analysisRangeMonths() {
-    const start = selectedStartMonth();
-    const end = currentMonth();
-
-    const months = [];
-    const [startYear, startMonth] = start.split("-").map(Number);
-    const [endYear, endMonth] = end.split("-").map(Number);
-
-    let cursor = new Date(startYear, startMonth - 1, 1);
-    const endDate = new Date(endYear, endMonth - 1, 1);
-
-    while (cursor <= endDate) {
-      months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-    }
-
-    return months;
+    return monthRange();
   }
 
   function housingMonthRange() {
-    const start = "2026-01";
-    const end = selectedAnalysisMonth();
-
-    const months = [];
-    const [startYear, startMonth] = start.split("-").map(Number);
-    const [endYear, endMonth] = end.split("-").map(Number);
-
-    let cursor = new Date(startYear, startMonth - 1, 1);
-    const endDate = new Date(endYear, endMonth - 1, 1);
-
-    while (cursor <= endDate) {
-      months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-    }
-
-    return months;
+    return monthRange();
   }
 
   function isSettlement(row) {
