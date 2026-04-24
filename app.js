@@ -151,10 +151,8 @@
 
   function normalizePersonName(name) {
     const raw = String(name || "").trim().toLowerCase();
-
     if (raw === "maximilian hofer" || raw === "hofer maximilian") return PERSON_A;
     if (raw === "jana march") return PERSON_B;
-
     return String(name || "").trim();
   }
 
@@ -313,27 +311,6 @@
     return months;
   }
 
-  function housingRangeMonths() {
-    const start = "2026-01";
-    const end = selectedAnalysisMonth();
-
-    const [startYear, startMonth] = start.split("-").map(Number);
-    const [endYear, endMonth] = end.split("-").map(Number);
-
-    const startDate = new Date(startYear, startMonth - 1, 1);
-    const endDate = new Date(endYear, endMonth - 1, 1);
-
-    let months = 0;
-    let cursor = new Date(startDate);
-
-    while (cursor <= endDate) {
-      months += 1;
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-    }
-
-    return months;
-  }
-
   function housingMonthRange() {
     const start = "2026-01";
     const end = selectedAnalysisMonth();
@@ -394,6 +371,45 @@
     if (categories.includes(current)) els.filterMainCategory.value = current;
   }
 
+  function getTripById(tripId) {
+    return (state.data.trips || []).find((row) => row.trip_id === tripId) || null;
+  }
+
+  function isSharedTrip(row) {
+    const me = currentUserName();
+    const other = otherUserName();
+    const owner = normalizePersonName(row.owner_user || "");
+    const travelWith = String(row.travel_with || "").trim();
+    const travelWithNorm = normalizePersonName(travelWith);
+
+    if (owner !== other) return false;
+    if (travelWithNorm === me) return true;
+
+    const lower = travelWith.toLowerCase();
+    return lower.includes(me.toLowerCase()) && lower.includes(other.toLowerCase());
+  }
+
+  function isVisibleTrip(row) {
+    if (!row) return false;
+    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+
+    const me = currentUserName();
+    const owner = normalizePersonName(row.owner_user || "");
+
+    if (owner === me) return true;
+    return isSharedTrip(row);
+  }
+
+  function isVisibleTripExpense(row) {
+    if (!row) return false;
+    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+
+    const trip = getTripById(row.trip_id);
+    if (!trip) return false;
+
+    return isVisibleTrip(trip);
+  }
+
   function isVisibleTransaction(row) {
     if (!row) return false;
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
@@ -412,11 +428,6 @@
     if (mainCategory === "Wohnen" || mainCategory === "Alltag") return true;
 
     return String(row.visible_to_other || "").toLowerCase() === "ja";
-  }
-
-  function isVisibleTrip(row) {
-    if (!row) return false;
-    return String(row.is_deleted || "").toLowerCase() !== "ja";
   }
 
   function isVisibleIncome(row) {
@@ -473,7 +484,7 @@
 
   function filteredTripExpensesForMonth(month) {
     return (state.data.tripExpenses || [])
-      .filter(isVisibleTrip)
+      .filter(isVisibleTripExpense)
       .filter((row) => monthFromDate(row.month_key || row.date) === month);
   }
 
@@ -531,7 +542,7 @@
       .filter((row) => monthFromDate(row.month_key || row.date) === month);
 
     const tripRows = (state.data.tripExpenses || [])
-      .filter(isVisibleTrip)
+      .filter(isVisibleTripExpense)
       .filter((row) => monthFromDate(row.month_key || row.date) === month);
 
     txRows.forEach((row) => {
@@ -673,7 +684,7 @@
       if (year) years.add(year);
     });
 
-    (state.data.tripExpenses || []).filter(isVisibleTrip).forEach((row) => {
+    (state.data.tripExpenses || []).filter(isVisibleTripExpense).forEach((row) => {
       const year = String(row.date || "").slice(0, 4);
       if (year) years.add(year);
     });
@@ -746,7 +757,7 @@
     const months = new Set(monthRange());
 
     return (state.data.tripExpenses || [])
-      .filter(isVisibleTrip)
+      .filter(isVisibleTripExpense)
       .filter((row) => months.has(monthFromDate(row.month_key || row.date)))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   }
@@ -799,7 +810,6 @@
 
     const peerBalanceMonth = calculatePeerBalanceForMonth(month);
     const peerBalanceOpen = calculateOpenPeerBalanceUntil(month);
-    const categoryAggregate = aggregateCategories(txRows.concat(tripRows));
     const percentMode = isPercentMode();
 
     if (els.heroAvailable) {
@@ -885,7 +895,6 @@
       totalExpenses,
       variableCosts,
       available,
-      categoryAggregate,
       peerBalanceMonth,
       peerBalanceOpen
     };
@@ -1180,11 +1189,7 @@
   }
 
   function getVisibleVacationExpenses() {
-    return (state.data.tripExpenses || []).filter(isVisibleTrip);
-  }
-
-  function getTripById(tripId) {
-    return (state.data.trips || []).find((row) => row.trip_id === tripId) || null;
+    return (state.data.tripExpenses || []).filter(isVisibleTripExpense);
   }
 
   function getVacationCategoryBucket(row) {
@@ -1220,7 +1225,7 @@
     } else {
       relevantExpenses = allExpenses.filter((row) => row.trip_id === selectedTripId);
       const trip = getTripById(selectedTripId);
-      relevantTrips = trip ? [trip] : [];
+      relevantTrips = trip && isVisibleTrip(trip) ? [trip] : [];
     }
 
     const categories = {
@@ -1684,6 +1689,7 @@
     }
 
     if (data.paid_by) data.paid_by = normalizePersonName(data.paid_by);
+    if (data.travel_with) data.travel_with = normalizePersonName(data.travel_with);
 
     if (user) {
       data.owner_user = normalizedUser;
