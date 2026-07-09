@@ -1197,47 +1197,120 @@
     return "Sonstiges";
   }
 
+  function getTripPersonSplit(row) {
+    const amount = Number(row.amount || 0);
+    const owner = normalizePersonName(row.owner_user || "");
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+    const splitPercent = Number(row.split_percent || 100);
+
+    let ownerShare = amount;
+    let otherShare = 0;
+
+    if (splitEnabled) {
+      ownerShare = amount * (splitPercent / 100);
+      otherShare = amount - ownerShare;
+    }
+
+    if (owner === PERSON_A) {
+      return {
+        max: ownerShare,
+        jana: otherShare
+      };
+    }
+
+    if (owner === PERSON_B) {
+      return {
+        max: otherShare,
+        jana: ownerShare
+      };
+    }
+
+    return { max: 0, jana: 0 };
+  }
+
+  function getVacationExpenseDisplayShares(row, trip) {
+    const current = getCurrentUserAmount(row);
+    const tripIsShared = trip ? isSharedTrip(trip) : false;
+
+    if (!tripIsShared) {
+      return {
+        total: current,
+        max: currentUserName() === PERSON_A ? current : 0,
+        jana: currentUserName() === PERSON_B ? current : 0,
+        shared: false
+      };
+    }
+
+    const split = getTripPersonSplit(row);
+    return {
+      total: Number(row.amount || 0),
+      max: split.max,
+      jana: split.jana,
+      shared: true
+    };
+  }
+
+  function createVacationCategoryAccumulator() {
+    return {
+      Transport: { total: 0, max: 0, jana: 0 },
+      Unterkunft: { total: 0, max: 0, jana: 0 },
+      Essen: { total: 0, max: 0, jana: 0 },
+      Aktivitäten: { total: 0, max: 0, jana: 0 }
+    };
+  }
+
   function computeVacationOverviewData() {
     const selectedYear = selectedVacationYear();
     const selectedTripId = els.vacationAnalysisSelect?.value || "year";
-    const allExpenses = getVisibleVacationExpenses();
-    const allTrips = (state.data.trips || []).filter(isVisibleTrip);
+    const visibleTrips = (state.data.trips || []).filter(isVisibleTrip);
+    const visibleExpenses = getVisibleVacationExpenses();
 
-    let relevantExpenses = [];
     let relevantTrips = [];
-
     if (selectedTripId === "year") {
-      relevantExpenses = allExpenses.filter((row) => normalizeDateOnly(row.date).slice(0, 4) === selectedYear);
-      const tripIdSet = new Set(relevantExpenses.map((row) => row.trip_id));
-      relevantTrips = allTrips.filter((trip) => tripIdSet.has(trip.trip_id));
+      relevantTrips = visibleTrips.filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
     } else {
-      relevantExpenses = allExpenses.filter((row) => row.trip_id === selectedTripId);
-      const trip = getTripById(selectedTripId);
-      relevantTrips = trip && isVisibleTrip(trip) ? [trip] : [];
+      relevantTrips = visibleTrips.filter((trip) => trip.trip_id === selectedTripId);
     }
 
-    const categories = {
-      Transport: 0,
-      Unterkunft: 0,
-      Essen: 0,
-      Aktivitäten: 0
-    };
+    const relevantTripIds = new Set(relevantTrips.map((trip) => trip.trip_id));
+    const relevantExpenses = visibleExpenses.filter((row) => relevantTripIds.has(row.trip_id));
+
+    const categories = createVacationCategoryAccumulator();
 
     relevantExpenses.forEach((row) => {
       const bucket = getVacationCategoryBucket(row);
-      if (categories[bucket] != null) {
-        categories[bucket] += getCurrentUserAmount(row);
-      }
+      if (!categories[bucket]) return;
+
+      const trip = getTripById(row.trip_id);
+      const shares = getVacationExpenseDisplayShares(row, trip);
+
+      categories[bucket].total += shares.total;
+      categories[bucket].max += shares.max;
+      categories[bucket].jana += shares.jana;
     });
 
-    const totalCost = Object.values(categories).reduce((sum, value) => sum + value, 0);
+    const totals = {
+      total: 0,
+      max: 0,
+      jana: 0
+    };
+
+    Object.values(categories).forEach((entry) => {
+      totals.total += entry.total;
+      totals.max += entry.max;
+      totals.jana += entry.jana;
+    });
+
+    const hasSharedTrip = relevantTrips.some((trip) => isSharedTrip(trip));
 
     return {
       selectedTripId,
       selectedYear,
       relevantTrips,
+      relevantExpenses,
       categories,
-      totalCost
+      totals,
+      hasSharedTrip
     };
   }
 
@@ -1250,56 +1323,93 @@
     const expenses = getVisibleVacationExpenses();
 
     const labels = [];
-    const transport = [];
-    const unterkunft = [];
-    const essen = [];
-    const aktivitaeten = [];
+    const datasets = {
+      maxTransport: [],
+      janaTransport: [],
+      maxUnterkunft: [],
+      janaUnterkunft: [],
+      maxEssen: [],
+      janaEssen: [],
+      maxAktivitaeten: [],
+      janaAktivitaeten: []
+    };
 
     trips.forEach((trip) => {
       labels.push(trip.title || trip.destination || trip.trip_id);
 
-      const cat = {
-        Transport: 0,
-        Unterkunft: 0,
-        Essen: 0,
-        Aktivitäten: 0
+      const local = {
+        Transport: { max: 0, jana: 0 },
+        Unterkunft: { max: 0, jana: 0 },
+        Essen: { max: 0, jana: 0 },
+        Aktivitäten: { max: 0, jana: 0 }
       };
 
       expenses
         .filter((row) => row.trip_id === trip.trip_id)
         .forEach((row) => {
           const bucket = getVacationCategoryBucket(row);
-          if (cat[bucket] != null) cat[bucket] += getCurrentUserAmount(row);
+          if (!local[bucket]) return;
+
+          const shares = getVacationExpenseDisplayShares(row, trip);
+          local[bucket].max += shares.max;
+          local[bucket].jana += shares.jana;
         });
 
-      transport.push(cat.Transport);
-      unterkunft.push(cat.Unterkunft);
-      essen.push(cat.Essen);
-      aktivitaeten.push(cat.Aktivitäten);
+      datasets.maxTransport.push(local.Transport.max);
+      datasets.janaTransport.push(local.Transport.jana);
+      datasets.maxUnterkunft.push(local.Unterkunft.max);
+      datasets.janaUnterkunft.push(local.Unterkunft.jana);
+      datasets.maxEssen.push(local.Essen.max);
+      datasets.janaEssen.push(local.Essen.jana);
+      datasets.maxAktivitaeten.push(local.Aktivitäten.max);
+      datasets.janaAktivitaeten.push(local.Aktivitäten.jana);
     });
 
-    return { labels, transport, unterkunft, essen, aktivitaeten };
+    return { labels, datasets };
   }
 
   function renderVacationOverview() {
     const data = computeVacationOverviewData();
 
     if (els.vacationTotalCost) {
-      els.vacationTotalCost.textContent = currency(data.totalCost);
+      els.vacationTotalCost.textContent = currency(data.totals.total);
     }
+
     if (els.vacationTripCount) {
       els.vacationTripCount.textContent = String(data.relevantTrips.length);
     }
 
     if (els.vacationKpiTableBody) {
-      const total = data.totalCost || 1;
-      const rows = Object.entries(data.categories).map(([name, value]) => `
-        <tr>
-          <td>${escapeHtml(name)}</td>
-          <td>${escapeHtml(currency(value))}</td>
-          <td>${escapeHtml(percent((value / total) * 100))}</td>
-        </tr>
-      `).join("");
+      const totalBase = data.totals.total || 1;
+
+      const rows = Object.entries(data.categories).map(([name, values]) => {
+        if (data.hasSharedTrip) {
+          return `
+            <tr>
+              <td>${escapeHtml(name)}</td>
+              <td>
+                Gesamt ${escapeHtml(currency(values.total))}<br>
+                ${escapeHtml(PERSON_A)} ${escapeHtml(currency(values.max))}<br>
+                ${escapeHtml(PERSON_B)} ${escapeHtml(currency(values.jana))}
+              </td>
+              <td>
+                Gesamt ${escapeHtml(percent((values.total / totalBase) * 100))}<br>
+                ${escapeHtml(PERSON_A)} ${escapeHtml(percent((values.max / totalBase) * 100))}<br>
+                ${escapeHtml(PERSON_B)} ${escapeHtml(percent((values.jana / totalBase) * 100))}
+              </td>
+            </tr>
+          `;
+        }
+
+        const ownValue = currentUserName() === PERSON_A ? values.max : values.jana;
+        return `
+          <tr>
+            <td>${escapeHtml(name)}</td>
+            <td>${escapeHtml(currency(ownValue))}</td>
+            <td>${escapeHtml(percent((ownValue / totalBase) * 100))}</td>
+          </tr>
+        `;
+      }).join("");
 
       els.vacationKpiTableBody.innerHTML = rows || '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
     }
@@ -1311,10 +1421,54 @@
       data: {
         labels: chartData.labels,
         datasets: [
-          { label: "Transport", data: chartData.transport, backgroundColor: "rgba(79,124,255,.82)" },
-          { label: "Unterkunft", data: chartData.unterkunft, backgroundColor: "rgba(255,190,61,.82)" },
-          { label: "Essen", data: chartData.essen, backgroundColor: "rgba(19,194,150,.82)" },
-          { label: "Aktivitäten", data: chartData.aktivitaeten, backgroundColor: "rgba(255,109,122,.82)" }
+          {
+            label: `Transport – ${PERSON_A}`,
+            data: chartData.datasets.maxTransport,
+            stack: "Transport",
+            backgroundColor: "rgba(79,124,255,.82)"
+          },
+          {
+            label: `Transport – ${PERSON_B}`,
+            data: chartData.datasets.janaTransport,
+            stack: "Transport",
+            backgroundColor: "rgba(79,124,255,.42)"
+          },
+          {
+            label: `Unterkunft – ${PERSON_A}`,
+            data: chartData.datasets.maxUnterkunft,
+            stack: "Unterkunft",
+            backgroundColor: "rgba(255,190,61,.82)"
+          },
+          {
+            label: `Unterkunft – ${PERSON_B}`,
+            data: chartData.datasets.janaUnterkunft,
+            stack: "Unterkunft",
+            backgroundColor: "rgba(255,190,61,.42)"
+          },
+          {
+            label: `Essen – ${PERSON_A}`,
+            data: chartData.datasets.maxEssen,
+            stack: "Essen",
+            backgroundColor: "rgba(19,194,150,.82)"
+          },
+          {
+            label: `Essen – ${PERSON_B}`,
+            data: chartData.datasets.janaEssen,
+            stack: "Essen",
+            backgroundColor: "rgba(19,194,150,.42)"
+          },
+          {
+            label: `Aktivitäten – ${PERSON_A}`,
+            data: chartData.datasets.maxAktivitaeten,
+            stack: "Aktivitäten",
+            backgroundColor: "rgba(255,109,122,.82)"
+          },
+          {
+            label: `Aktivitäten – ${PERSON_B}`,
+            data: chartData.datasets.janaAktivitaeten,
+            stack: "Aktivitäten",
+            backgroundColor: "rgba(255,109,122,.42)"
+          }
         ]
       },
       options: chartOptions(true)
