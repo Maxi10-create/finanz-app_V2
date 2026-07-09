@@ -346,14 +346,15 @@
     return (state.data.trips || []).find((row) => row.trip_id === tripId) || null;
   }
 
-  function isSharedTrip(row) {
-    if (!row) return false;
+  function isSharedTrip(trip) {
+    if (!trip) return false;
 
-    const owner = normalizePersonName(row.owner_user || "");
-    const travelWith = String(row.travel_with || "").trim();
+    const owner = normalizePersonName(trip.owner_user || "");
+    const travelWith = String(trip.travel_with || "").trim();
     const travelWithNorm = normalizePersonName(travelWith);
 
     if (!travelWith) return false;
+
     if (travelWithNorm === PERSON_A || travelWithNorm === PERSON_B) {
       return owner !== travelWithNorm;
     }
@@ -365,33 +366,67 @@
     return false;
   }
 
-  function isVisibleTrip(row) {
-    if (!row) return false;
-    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+  function isVisibleTrip(trip) {
+    if (!trip) return false;
+    if (String(trip.is_deleted || "").toLowerCase() === "ja") return false;
 
     const me = currentUserName();
-    const owner = normalizePersonName(row.owner_user || "");
+    const owner = normalizePersonName(trip.owner_user || "");
 
     if (owner === me) return true;
-    return isSharedTrip(row);
+    return isSharedTrip(trip);
+  }
+
+  function getPaidOwnerForNonSplit(row) {
+    const paidBy = normalizePersonName(row.paid_by || "");
+    const owner = normalizePersonName(row.owner_user || "");
+
+    if (paidBy === PERSON_A || paidBy === PERSON_B) return paidBy;
+    if (owner === PERSON_A || owner === PERSON_B) return owner;
+    return owner || paidBy || currentUserName();
+  }
+
+  function getBasePersonShares(row, baseAmount) {
+    const amount = Number(baseAmount == null ? row.amount : baseAmount) || 0;
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+    const splitPercent = Number(row.split_percent || 100);
+    const owner = normalizePersonName(row.owner_user || "");
+
+    const shares = {
+      total: amount,
+      [PERSON_A]: 0,
+      [PERSON_B]: 0
+    };
+
+    if (splitEnabled) {
+      const ownerShare = amount * (splitPercent / 100);
+      const otherShare = amount - ownerShare;
+
+      if (owner === PERSON_A) {
+        shares[PERSON_A] = ownerShare;
+        shares[PERSON_B] = otherShare;
+      } else if (owner === PERSON_B) {
+        shares[PERSON_B] = ownerShare;
+        shares[PERSON_A] = otherShare;
+      } else {
+        shares[PERSON_A] = amount / 2;
+        shares[PERSON_B] = amount / 2;
+      }
+      return shares;
+    }
+
+    const assigned = getPaidOwnerForNonSplit(row);
+    if (assigned === PERSON_A) shares[PERSON_A] = amount;
+    else if (assigned === PERSON_B) shares[PERSON_B] = amount;
+    else shares[currentUserName()] = amount;
+
+    return shares;
   }
 
   function getUserShareFromAmount(row, baseAmount) {
     if (isSettlement(row)) return 0;
-
-    const amount = Number(baseAmount || 0);
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    const splitPercent = Number(row.split_percent || 100);
-    const owner = normalizePersonName(row.owner_user || "");
-    const me = currentUserName();
-
-    if (!splitEnabled) {
-      return owner === me ? amount : 0;
-    }
-
-    const ownerShare = amount * (splitPercent / 100);
-    const otherShare = amount - ownerShare;
-    return owner === me ? ownerShare : otherShare;
+    const shares = getBasePersonShares(row, baseAmount);
+    return shares[currentUserName()] || 0;
   }
 
   function getCurrentUserAmount(row) {
@@ -405,13 +440,6 @@
     const trip = getTripById(row.trip_id);
     if (trip && isSharedTrip(trip)) return true;
 
-    const me = currentUserName();
-    const owner = normalizePersonName(row.owner_user || "");
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-
-    if (owner === me) return true;
-    if (!splitEnabled) return false;
-
     return getCurrentUserAmount(row) > 0;
   }
 
@@ -420,7 +448,6 @@
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const trip = getTripById(row.trip_id);
-
     if (trip && isSharedTrip(trip)) return true;
     if (trip && isVisibleTrip(trip)) return true;
 
@@ -431,12 +458,12 @@
     if (!row) return false;
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
-    const user = currentUserName();
+    const me = currentUserName();
     const owner = normalizePersonName(row.owner_user || "");
     const counterparty = row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
 
-    if (owner === user) return true;
-    if (isSettlement(row) && counterparty === user) return true;
+    if (owner === me) return true;
+    if (isSettlement(row) && counterparty === me) return true;
 
     const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     if (!splitEnabled) return false;
@@ -546,57 +573,29 @@
         return;
       }
 
-      const amount = Number(row.amount || 0);
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-      const splitPercent = Number(row.split_percent || 100);
-      const owner = normalizePersonName(row.owner_user || "");
-      const paidBy = normalizePersonName(row.paid_by || "");
-
       if (!splitEnabled) return;
 
-      const ownerShare = amount * (splitPercent / 100);
-      const otherShare = amount - ownerShare;
+      const shares = getBasePersonShares(row, row.amount);
+      const myShare = shares[me] || 0;
+      const otherShare = shares[otherUserName()] || 0;
+      const paidBy = normalizePersonName(row.paid_by || "");
 
-      if (owner === me) {
-        if (paidBy === me) balance += otherShare;
-        else balance -= ownerShare;
-      } else {
-        if (paidBy === me) balance += ownerShare;
-        else balance -= otherShare;
-      }
+      if (paidBy === me) balance += otherShare;
+      else balance -= myShare;
     });
 
     tripRows.forEach((row) => {
-      const trip = getTripById(row.trip_id);
-      const sharedTrip = trip && isSharedTrip(trip);
-
-      const amount = Number(row.amount || 0);
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-      const splitPercent = Number(row.split_percent || 100);
-      const owner = normalizePersonName(row.owner_user || "");
+      if (!splitEnabled) return;
+
+      const shares = getBasePersonShares(row, row.amount);
+      const myShare = shares[me] || 0;
+      const otherShare = shares[otherUserName()] || 0;
       const paidBy = normalizePersonName(row.paid_by || "");
 
-      if (!splitEnabled && !sharedTrip) return;
-
-      if (sharedTrip && !splitEnabled) {
-        if (paidBy === me) {
-          balance += owner === me ? 0 : amount;
-        } else {
-          balance -= owner === me ? amount : 0;
-        }
-        return;
-      }
-
-      const ownerShare = amount * (splitPercent / 100);
-      const otherShare = amount - ownerShare;
-
-      if (owner === me) {
-        if (paidBy === me) balance += otherShare;
-        else balance -= ownerShare;
-      } else {
-        if (paidBy === me) balance += ownerShare;
-        else balance -= otherShare;
-      }
+      if (paidBy === me) balance += otherShare;
+      else balance -= myShare;
     });
 
     return balance;
@@ -1214,83 +1213,20 @@
     return "Sonstiges";
   }
 
-  function getSharedTripExpenseShares(row, trip) {
-    const amount = Number(row.amount || 0);
-    const owner = normalizePersonName(row.owner_user || "");
-    const paidBy = normalizePersonName(row.paid_by || "");
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    const splitPercent = Number(row.split_percent || 100);
-
-    const result = {
-      total: amount,
-      [PERSON_A]: 0,
-      [PERSON_B]: 0
-    };
-
-    if (splitEnabled) {
-      const ownerShare = amount * (splitPercent / 100);
-      const otherShare = amount - ownerShare;
-
-      if (owner === PERSON_A) {
-        result[PERSON_A] = ownerShare;
-        result[PERSON_B] = otherShare;
-      } else if (owner === PERSON_B) {
-        result[PERSON_B] = ownerShare;
-        result[PERSON_A] = otherShare;
-      } else {
-        result[PERSON_A] = amount / 2;
-        result[PERSON_B] = amount / 2;
-      }
-
-      return result;
-    }
-
-    if (paidBy === PERSON_A || paidBy === PERSON_B) {
-      result[paidBy] = amount;
-      return result;
-    }
-
-    if (owner === PERSON_A || owner === PERSON_B) {
-      result[owner] = amount;
-      return result;
-    }
-
-    result[PERSON_A] = amount / 2;
-    result[PERSON_B] = amount / 2;
-    return result;
-  }
-
-  function getSingleTripExpenseShareForCurrentUser(row) {
-    const paidBy = normalizePersonName(row.paid_by || "");
-    const owner = normalizePersonName(row.owner_user || "");
-    const me = currentUserName();
-    const amount = Number(row.amount || 0);
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-
-    if (splitEnabled) {
-      return getCurrentUserAmount(row);
-    }
-
-    if (paidBy === me) return amount;
-    if (owner === me) return amount;
-
-    return 0;
-  }
-
   function getVacationExpenseDisplayShares(row, trip) {
     const shared = !!(trip && isSharedTrip(trip));
 
     if (shared) {
-      const distributed = getSharedTripExpenseShares(row, trip);
+      const shares = getBasePersonShares(row, row.amount);
       return {
         shared: true,
-        total: distributed.total,
-        max: distributed[PERSON_A],
-        jana: distributed[PERSON_B]
+        total: shares.total,
+        max: shares[PERSON_A] || 0,
+        jana: shares[PERSON_B] || 0
       };
     }
 
-    const own = getSingleTripExpenseShareForCurrentUser(row);
+    const own = getCurrentUserAmount(row);
     return {
       shared: false,
       total: own,
@@ -1415,14 +1351,15 @@
   function createCanvasPattern(canvas, type, color) {
     if (!canvas) return color;
     const ctx = canvas.getContext("2d");
+    if (!ctx) return color;
+
     const patternCanvas = document.createElement("canvas");
     patternCanvas.width = 16;
     patternCanvas.height = 16;
     const pctx = patternCanvas.getContext("2d");
+    if (!pctx) return color;
 
     pctx.clearRect(0, 0, 16, 16);
-    pctx.fillStyle = "rgba(0,0,0,0)";
-    pctx.fillRect(0, 0, 16, 16);
     pctx.strokeStyle = color;
     pctx.fillStyle = color;
     pctx.lineWidth = 2;
@@ -1512,14 +1449,14 @@
       datasets.push({
         label: `${category} Gesamt`,
         data: chartData.categories[category].total,
-        stack: "gesamt",
+        stack: `${category}_group`,
         backgroundColor: color
       });
 
       datasets.push({
         label: `${category} ${PERSON_A}`,
         data: chartData.categories[category].max,
-        stack: PERSON_A,
+        stack: `${category}_group`,
         backgroundColor: createCanvasPattern(canvas, "dotted", color),
         borderColor: color,
         borderWidth: 1
@@ -1528,7 +1465,7 @@
       datasets.push({
         label: `${category} ${PERSON_B}`,
         data: chartData.categories[category].jana,
-        stack: PERSON_B,
+        stack: `${category}_group`,
         backgroundColor: createCanvasPattern(canvas, "striped", color),
         borderColor: color,
         borderWidth: 1
@@ -1762,10 +1699,11 @@
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
             <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
+            <td>${escapeHtml(row.paid_by)}</td>
             <td>${actionButtons("tripExpense", row)}</td>
           </tr>
         `).join("")
-      : '<tr><td colspan="5" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
+      : '<tr><td colspan="6" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
   }
 
   function renderCategoriesTable() {
