@@ -4,7 +4,6 @@
 
   const PERSON_A = "Maximilian Hofer";
   const PERSON_B = "Jana March";
-
   const VACATION_BUCKETS = ["Transport", "Unterkunft", "Essen", "Aktivitäten", "Sonstiges"];
 
   const state = {
@@ -262,15 +261,9 @@
   }
 
   function setDefaultMonth() {
-    if (els.filterStartMonth && !els.filterStartMonth.value) {
-      els.filterStartMonth.value = DEFAULT_START_MONTH;
-    }
-    if (els.filterAnalysisMonth && !els.filterAnalysisMonth.value) {
-      els.filterAnalysisMonth.value = currentMonth();
-    }
-    if (els.rangeMonths && !els.rangeMonths.value) {
-      els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
-    }
+    if (els.filterStartMonth && !els.filterStartMonth.value) els.filterStartMonth.value = DEFAULT_START_MONTH;
+    if (els.filterAnalysisMonth && !els.filterAnalysisMonth.value) els.filterAnalysisMonth.value = currentMonth();
+    if (els.rangeMonths && !els.rangeMonths.value) els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
 
     const today = new Date().toISOString().slice(0, 10);
     const transactionDate = els.transactionForm?.querySelector('input[name="date"]');
@@ -349,10 +342,10 @@
   }
 
   function resolveTripPeople(trip) {
-    const owner = normalizePersonName(trip?.owner_user || "");
-    const travelWith = normalizePersonName(trip?.travel_with || "");
-
-    return { owner, travelWith };
+    return {
+      owner: normalizePersonName(trip?.owner_user || ""),
+      travelWith: normalizePersonName(trip?.travel_with || "")
+    };
   }
 
   function isSharedTrip(trip) {
@@ -372,15 +365,36 @@
     return false;
   }
 
-  function getSharedTripParticipants(trip) {
-    if (!isSharedTrip(trip)) return [];
-    return [PERSON_A, PERSON_B];
+  function getTripGroupKey(trip) {
+    if (!trip) return "";
+
+    const title = String(trip.title || "").trim().toLowerCase();
+    const destination = String(trip.destination || "").trim().toLowerCase();
+    const start = normalizeDateOnly(trip.start_date || "");
+    const end = normalizeDateOnly(trip.end_date || "");
+
+    if (isSharedTrip(trip)) {
+      return `shared|${title}|${destination}|${start}|${end}|${PERSON_A}|${PERSON_B}`;
+    }
+
+    const owner = normalizePersonName(trip.owner_user || "");
+    return `single|${owner}|${title}|${destination}|${start}|${end}`;
+  }
+
+  function getTripGroupTrips(seedTrip) {
+    const key = getTripGroupKey(seedTrip);
+    return (state.data.trips || [])
+      .filter((trip) => String(trip.is_deleted || "").toLowerCase() !== "ja")
+      .filter((trip) => getTripGroupKey(trip) === key);
+  }
+
+  function getTripGroupTripIds(seedTrip) {
+    return getTripGroupTrips(seedTrip).map((trip) => trip.trip_id);
   }
 
   function isVisibleTrip(trip) {
     if (!trip) return false;
     if (String(trip.is_deleted || "").toLowerCase() === "ja") return false;
-
     if (isSharedTrip(trip)) return true;
     return normalizePersonName(trip.owner_user || "") === currentUserName();
   }
@@ -391,11 +405,7 @@
     const splitPercent = Number(row.split_percent || 100);
     const owner = normalizePersonName(row.owner_user || "");
 
-    const shares = {
-      total: amount,
-      [PERSON_A]: 0,
-      [PERSON_B]: 0
-    };
+    const shares = { total: amount, [PERSON_A]: 0, [PERSON_B]: 0 };
 
     if (splitEnabled) {
       const ownerShare = amount * (splitPercent / 100);
@@ -448,11 +458,7 @@
     const splitPercent = Number(row.split_percent || 100);
     const payer = resolveVacationPayer(row);
 
-    const shares = {
-      total: amount,
-      [PERSON_A]: 0,
-      [PERSON_B]: 0
-    };
+    const shares = { total: amount, [PERSON_A]: 0, [PERSON_B]: 0 };
 
     if (isSharedTrip(trip)) {
       const other = payer === PERSON_A ? PERSON_B : PERSON_A;
@@ -465,7 +471,6 @@
       } else {
         shares[payer] = amount;
       }
-
       return shares;
     }
 
@@ -494,7 +499,6 @@
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const trip = getTripById(row.trip_id);
-
     if (trip && isSharedTrip(trip)) return true;
     if (trip && isVisibleTrip(trip) && getVacationCurrentUserAmount(row) > 0) return true;
 
@@ -753,6 +757,27 @@
     return [...years].sort((a, b) => Number(b) - Number(a));
   }
 
+  function buildVacationSelectionEntries(selectedYear) {
+    const visibleTrips = (state.data.trips || [])
+      .filter(isVisibleTrip)
+      .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
+
+    const unique = new Map();
+
+    visibleTrips.forEach((trip) => {
+      const key = getTripGroupKey(trip);
+      if (!unique.has(key)) {
+        unique.set(key, {
+          value: `group:${key}`,
+          label: `${trip.title} – ${trip.destination}`,
+          sortDate: String(trip.start_date || "")
+        });
+      }
+    });
+
+    return [...unique.values()].sort((a, b) => b.sortDate.localeCompare(a.sortDate));
+  }
+
   function selectedVacationYear() {
     return els.vacationYearSelect?.value || String(currentYear());
   }
@@ -786,19 +811,15 @@
     }
 
     const selectedYear = selectedVacationYear();
-    const currentTripSelection = els.vacationAnalysisSelect.value;
-
-    const trips = (state.data.trips || [])
-      .filter(isVisibleTrip)
-      .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear)
-      .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
+    const currentValue = els.vacationAnalysisSelect.value;
+    const entries = buildVacationSelectionEntries(selectedYear);
 
     els.vacationAnalysisSelect.innerHTML =
       '<option value="year">Alle Urlaube im gewählten Jahr</option>' +
-      trips.map((row) => `<option value="${escapeHtml(row.trip_id)}">${escapeHtml(row.title)} – ${escapeHtml(row.destination)}</option>`).join("");
+      entries.map((entry) => `<option value="${escapeHtml(entry.value)}">${escapeHtml(entry.label)}</option>`).join("");
 
-    const validValues = ["year", ...trips.map((t) => t.trip_id)];
-    els.vacationAnalysisSelect.value = validValues.includes(currentTripSelection) ? currentTripSelection : "year";
+    const validValues = ["year", ...entries.map((e) => e.value)];
+    els.vacationAnalysisSelect.value = validValues.includes(currentValue) ? currentValue : "year";
   }
 
   function getTransactionsForTable() {
@@ -1282,20 +1303,27 @@
     }, {});
   }
 
-  function computeVacationOverviewData() {
+  function resolveSelectedVacationTrips() {
     const selectedYear = selectedVacationYear();
-    const selectedTripId = els.vacationAnalysisSelect?.value || "year";
-    const visibleTrips = (state.data.trips || []).filter(isVisibleTrip);
-    const visibleExpenses = getVisibleVacationExpenses();
+    const selectedValue = els.vacationAnalysisSelect?.value || "year";
+    const visibleTrips = (state.data.trips || [])
+      .filter(isVisibleTrip)
+      .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
 
-    let relevantTrips = [];
-    if (selectedTripId === "year") {
-      relevantTrips = visibleTrips.filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
-    } else {
-      relevantTrips = visibleTrips.filter((trip) => trip.trip_id === selectedTripId);
+    if (selectedValue === "year") return visibleTrips;
+
+    if (selectedValue.startsWith("group:")) {
+      const groupKey = selectedValue.slice(6);
+      return visibleTrips.filter((trip) => getTripGroupKey(trip) === groupKey);
     }
 
+    return visibleTrips;
+  }
+
+  function computeVacationOverviewData() {
+    const relevantTrips = resolveSelectedVacationTrips();
     const relevantTripIds = new Set(relevantTrips.map((trip) => trip.trip_id));
+    const visibleExpenses = getVisibleVacationExpenses();
     const relevantExpenses = visibleExpenses.filter((row) => relevantTripIds.has(row.trip_id));
 
     const categories = createVacationCategoryAccumulator();
@@ -1320,8 +1348,6 @@
     const hasSharedTrip = relevantTrips.some((trip) => isSharedTrip(trip));
 
     return {
-      selectedTripId,
-      selectedYear,
       relevantTrips,
       relevantExpenses,
       categories,
@@ -1346,7 +1372,6 @@
         const ownValue = currentUserName() === PERSON_A
           ? data.categories[bucket].max
           : data.categories[bucket].jana;
-
         bucketData[bucket] = [ownValue];
       }
     });
@@ -1393,13 +1418,8 @@
   function renderVacationOverview() {
     const data = computeVacationOverviewData();
 
-    if (els.vacationTotalCost) {
-      els.vacationTotalCost.textContent = currency(data.totals.total);
-    }
-
-    if (els.vacationTripCount) {
-      els.vacationTripCount.textContent = String(data.relevantTrips.length);
-    }
+    if (els.vacationTotalCost) els.vacationTotalCost.textContent = currency(data.totals.total);
+    if (els.vacationTripCount) els.vacationTripCount.textContent = String(data.relevantTrips.length);
 
     if (els.vacationKpiTableBody) {
       const totalBase = data.totals.total || 1;
@@ -1581,15 +1601,9 @@
     const data = computeHousingOverviewData();
     const mode = housingDisplayMode();
 
-    if (els.housingMonthTotal) {
-      els.housingMonthTotal.textContent = currency(data.monthTotal);
-    }
-    if (els.housingAverageTotal) {
-      els.housingAverageTotal.textContent = currency(data.averageTotal);
-    }
-    if (els.housingCategoryCount) {
-      els.housingCategoryCount.textContent = String(data.categoryCount || 0);
-    }
+    if (els.housingMonthTotal) els.housingMonthTotal.textContent = currency(data.monthTotal);
+    if (els.housingAverageTotal) els.housingAverageTotal.textContent = currency(data.averageTotal);
+    if (els.housingCategoryCount) els.housingCategoryCount.textContent = String(data.categoryCount || 0);
 
     renderHousingTable(els.housingMonthTableBody, data.monthMap, data.monthTotal, mode, "Daten");
 
@@ -1601,9 +1615,7 @@
       [...getCombinedHousingCategoryMapForMonth(month).values()].reduce((sum, value) => sum + value, 0)
     );
 
-    const totalSeries = mode === "percent"
-      ? totalSeriesRaw.map(() => 100)
-      : totalSeriesRaw;
+    const totalSeries = mode === "percent" ? totalSeriesRaw.map(() => 100) : totalSeriesRaw;
 
     const datasets = [
       {
@@ -1646,10 +1658,7 @@
 
     ensureChart("housingTrendChart", "housingTrendChart", {
       type: "line",
-      data: {
-        labels: data.months,
-        datasets
-      },
+      data: { labels: data.months, datasets },
       options: chartOptions()
     });
   }
