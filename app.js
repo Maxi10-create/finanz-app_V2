@@ -1,2316 +1,428 @@
-(() => {
-  const DEFAULT_START_MONTH = "2026-01";
-  const DEFAULT_RANGE_MONTHS = 12;
+function getTripGroupKey(trip) {
+  if (!trip) return "";
 
-  const PERSON_A = "Maximilian Hofer";
-  const PERSON_B = "Jana March";
-  const VACATION_BUCKETS = ["Transport", "Unterkunft", "Essen", "Aktivitäten", "Sonstiges"];
+  const title = String(trip.title || "").trim().toLowerCase();
+  const destination = String(trip.destination || "").trim().toLowerCase();
+  const start = normalizeDateOnly(trip.start_date || "");
+  const end = normalizeDateOnly(trip.end_date || "");
 
-  const state = {
-    activeApiBaseUrl: null,
-    charts: {},
-    initializedUi: false,
-    data: {
-      income: [],
-      transactions: [],
-      trips: [],
-      tripExpenses: [],
-      categories: [],
-      fixedCosts: []
-    }
-  };
-
-  const els = {
-    tabs: document.getElementById("tabs"),
-    filterStartMonth: document.getElementById("filterStartMonth"),
-    filterAnalysisMonth: document.getElementById("filterAnalysisMonth"),
-    filterMainCategory: document.getElementById("filterMainCategory"),
-    rangeMonths: document.getElementById("rangeMonths"),
-    chartMode: document.getElementById("chartMode"),
-    compositionMode: document.getElementById("compositionMode"),
-    reloadBtn: document.getElementById("reloadBtn"),
-    syncStatus: document.getElementById("syncStatus"),
-    messageBox: document.getElementById("messageBox"),
-
-    kpiGrid: document.getElementById("kpiGrid"),
-    monthlySummary: document.getElementById("monthlySummary"),
-    insightList: document.getElementById("insightList"),
-
-    categoryTableBody: document.querySelector("#categoryTable tbody"),
-    transactionsTableBody: document.querySelector("#transactionsTable tbody"),
-    tripsTableBody: document.querySelector("#tripsTable tbody"),
-    tripExpensesTableBody: document.querySelector("#tripExpensesTable tbody"),
-    categoriesTableBody: document.querySelector("#categoriesTable tbody"),
-    fixedCostsTableBody: document.querySelector("#fixedCostsTable tbody"),
-    incomeTableBody: document.querySelector("#incomeTable tbody"),
-
-    monthOverviewTableBody: document.querySelector("#monthOverviewTable tbody"),
-    rangeOverviewTableBody: document.querySelector("#rangeOverviewTable tbody"),
-    categoryCompareTableBody: document.querySelector("#categoryCompareTable tbody"),
-
-    heroAvailable: document.getElementById("heroAvailable"),
-    heroAvailableSub: document.getElementById("heroAvailableSub"),
-    heroFixedCosts: document.getElementById("heroFixedCosts"),
-    heroFixedCostsSub: document.getElementById("heroFixedCostsSub"),
-    heroPeerBalance: document.getElementById("heroPeerBalance"),
-    heroPeerLabel: document.getElementById("heroPeerLabel"),
-
-    bookingMainCategory: document.getElementById("bookingMainCategory"),
-    bookingSubCategory: document.getElementById("bookingSubCategory"),
-    tripMainCategory: document.getElementById("tripMainCategory"),
-    tripSubCategory: document.getElementById("tripSubCategory"),
-    fixedMainCategory: document.getElementById("fixedMainCategory"),
-    fixedSubCategory: document.getElementById("fixedSubCategory"),
-    tripExpenseTripId: document.getElementById("tripExpenseTripId"),
-
-    transactionForm: document.getElementById("transactionForm"),
-    tripForm: document.getElementById("tripForm"),
-    tripExpenseForm: document.getElementById("tripExpenseForm"),
-    categoryForm: document.getElementById("categoryForm"),
-    fixedCostForm: document.getElementById("fixedCostForm"),
-    incomeForm: document.getElementById("incomeForm"),
-
-    bookingFormModeLabel: document.getElementById("bookingFormModeLabel"),
-    tripFormModeLabel: document.getElementById("tripFormModeLabel"),
-    tripExpenseFormModeLabel: document.getElementById("tripExpenseFormModeLabel"),
-    categoryFormModeLabel: document.getElementById("categoryFormModeLabel"),
-    fixedCostFormModeLabel: document.getElementById("fixedCostFormModeLabel"),
-    incomeFormModeLabel: document.getElementById("incomeFormModeLabel"),
-
-    transactionSubmitBtn: document.getElementById("transactionSubmitBtn"),
-    tripSubmitBtn: document.getElementById("tripSubmitBtn"),
-    tripExpenseSubmitBtn: document.getElementById("tripExpenseSubmitBtn"),
-    categorySubmitBtn: document.getElementById("categorySubmitBtn"),
-    fixedCostSubmitBtn: document.getElementById("fixedCostSubmitBtn"),
-    incomeSubmitBtn: document.getElementById("incomeSubmitBtn"),
-
-    transactionCancelEditBtn: document.getElementById("transactionCancelEditBtn"),
-    tripCancelEditBtn: document.getElementById("tripCancelEditBtn"),
-    tripExpenseCancelEditBtn: document.getElementById("tripExpenseCancelEditBtn"),
-    categoryCancelEditBtn: document.getElementById("categoryCancelEditBtn"),
-    fixedCostCancelEditBtn: document.getElementById("fixedCostCancelEditBtn"),
-    incomeCancelEditBtn: document.getElementById("incomeCancelEditBtn"),
-
-    fixedCompositionLabel: document.getElementById("fixedCompositionLabel"),
-    variableCompositionLabel: document.getElementById("variableCompositionLabel"),
-
-    bookingType: document.getElementById("bookingType"),
-    transactionCounterparty: document.getElementById("transactionCounterparty"),
-    transactionSplitEnabled: document.getElementById("transactionSplitEnabled"),
-    transactionSplitPercent: document.getElementById("transactionSplitPercent"),
-
-    housingDisplayMode: document.getElementById("housingDisplayMode"),
-    housingMonthTotal: document.getElementById("housingMonthTotal"),
-    housingAverageTotal: document.getElementById("housingAverageTotal"),
-    housingCategoryCount: document.getElementById("housingCategoryCount"),
-    housingMonthTableBody: document.querySelector("#housingMonthTable tbody"),
-
-    vacationYearSelect: document.getElementById("vacationYearSelect"),
-    vacationAnalysisSelect: document.getElementById("vacationAnalysisSelect"),
-    vacationTotalCost: document.getElementById("vacationTotalCost"),
-    vacationTripCount: document.getElementById("vacationTripCount"),
-    vacationKpiTableBody: document.querySelector("#vacationKpiTable tbody")
-  };
-
-  const editState = {
-    transaction: null,
-    trip: null,
-    tripExpense: null,
-    category: null,
-    fixedCost: null,
-    income: null
-  };
-
-  const currency = (value) =>
-    new Intl.NumberFormat("de-DE", {
-      style: "currency",
-      currency: CONFIG.DEFAULT_CURRENCY || "EUR"
-    }).format(Number(value || 0));
-
-  const percent = (value) => `${Number(value || 0).toFixed(1)} %`;
-
-  const escapeHtml = (value) =>
-    String(value ?? "").replace(/[&<>"']/g, (m) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[m]));
-
-  const currentMonth = () => new Date().toISOString().slice(0, 7);
-  const monthFromDate = (value) => String(value || "").slice(0, 7);
-  const normalizeDateOnly = (value) => String(value || "").slice(0, 10);
-
-  function currentYear() {
-    return new Date().getFullYear();
+  if (isSharedTrip(trip)) {
+    return `shared|${title}|${destination}|${start}|${end}|${PERSON_A}|${PERSON_B}`;
   }
 
-  function toPercent(value, income) {
-    return income > 0 ? (Number(value || 0) / Number(income || 0)) * 100 : 0;
-  }
+  const owner = normalizePersonName(trip.owner_user || "");
+  return `single|${owner}|${title}|${destination}|${start}|${end}`;
+}
 
-  function normalizePersonName(name) {
-    const raw = String(name || "").trim().toLowerCase();
-    if (raw === "maximilian hofer" || raw === "hofer maximilian") return PERSON_A;
-    if (raw === "jana march") return PERSON_B;
-    return String(name || "").trim();
-  }
+function buildVacationSelectionEntries(selectedYear) {
+  const visibleTrips = (state.data.trips || [])
+    .filter(isVisibleTrip)
+    .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
 
-  function currentUser() {
-    return typeof getActiveUser === "function" ? getActiveUser() : null;
-  }
+  const unique = new Map();
 
-  function currentUserName() {
-    const raw = currentUser()?.displayName || CONFIG.USER_NAME || PERSON_A;
-    return normalizePersonName(raw);
-  }
-
-  function otherUserName() {
-    return currentUserName() === PERSON_B ? PERSON_A : PERSON_B;
-  }
-
-  function normalizeRecordNames(record) {
-    const obj = { ...record };
-    if ("owner_user" in obj) obj.owner_user = normalizePersonName(obj.owner_user);
-    if ("paid_by" in obj) obj.paid_by = normalizePersonName(obj.paid_by);
-    if ("counterparty" in obj) obj.counterparty = obj.counterparty === "-" ? "-" : normalizePersonName(obj.counterparty);
-    if ("created_by" in obj) obj.created_by = normalizePersonName(obj.created_by);
-    if ("updated_by" in obj) obj.updated_by = normalizePersonName(obj.updated_by);
-    if ("travel_with" in obj && obj.travel_with != null) obj.travel_with = normalizePersonName(obj.travel_with);
-    return obj;
-  }
-
-  function isPercentMode() {
-    return (els.chartMode?.value || "currency") === "percent";
-  }
-
-  function selectedStartMonth() {
-    return els.filterStartMonth?.value || DEFAULT_START_MONTH;
-  }
-
-  function selectedAnalysisMonth() {
-    return els.filterAnalysisMonth?.value || currentMonth();
-  }
-
-  function housingDisplayMode() {
-    return els.housingDisplayMode?.value || "currency";
-  }
-
-  function showMessage(text, type = "error") {
-    if (!els.messageBox) return;
-    els.messageBox.innerHTML = `<div class="alert ${type}">${escapeHtml(text)}</div>`;
-  }
-
-  function clearMessage() {
-    if (!els.messageBox) return;
-    els.messageBox.innerHTML = "";
-  }
-
-  function withClientKeys(raw) {
-    return {
-      income: (raw.income || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `income_${idx}_${row.id || ""}` })),
-      transactions: (raw.transactions || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `transaction_${idx}_${row.id || ""}` })),
-      trips: (raw.trips || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `trip_${idx}_${row.trip_id || ""}` })),
-      tripExpenses: (raw.tripExpenses || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `tripExpense_${idx}_${row.id || ""}` })),
-      categories: (raw.categories || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `category_${idx}_${row.id || ""}` })),
-      fixedCosts: (raw.fixedCosts || []).map((row, idx) => ({ ...normalizeRecordNames(row), _clientKey: `fixedCost_${idx}_${row.id || ""}` }))
-    };
-  }
-
-  async function fetchJson(url, options = {}) {
-    const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async function resolveApiBaseUrl() {
-    if (state.activeApiBaseUrl) return state.activeApiBaseUrl;
-
-    for (const baseUrl of CONFIG.API_BASE_URLS || []) {
-      try {
-        const result = await fetchJson(`${baseUrl}?action=getAll`);
-        if (result && result.success) {
-          state.activeApiBaseUrl = baseUrl;
-          return baseUrl;
-        }
-      } catch (error) {
-        console.warn("API Test fehlgeschlagen:", baseUrl, error);
-      }
-    }
-
-    throw new Error("Keine funktionierende Apps-Script-URL gefunden. Bitte Deployment prüfen.");
-  }
-
-  async function apiGet(action) {
-    const baseUrl = await resolveApiBaseUrl();
-    const result = await fetchJson(`${baseUrl}?action=${encodeURIComponent(action)}`);
-    if (!result.success) throw new Error(result.error || "Unbekannter Backend-Fehler");
-    return result;
-  }
-
-  async function apiPost(action, payload) {
-    const baseUrl = await resolveApiBaseUrl();
-    const result = await fetchJson(baseUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, payload })
-    });
-    if (!result.success) throw new Error(result.error || "Unbekannter Backend-Fehler");
-    return result;
-  }
-
-  function setDefaultMonth() {
-    if (els.filterStartMonth && !els.filterStartMonth.value) els.filterStartMonth.value = DEFAULT_START_MONTH;
-    if (els.filterAnalysisMonth && !els.filterAnalysisMonth.value) els.filterAnalysisMonth.value = currentMonth();
-    if (els.rangeMonths && !els.rangeMonths.value) els.rangeMonths.value = String(DEFAULT_RANGE_MONTHS);
-
-    const today = new Date().toISOString().slice(0, 10);
-    const transactionDate = els.transactionForm?.querySelector('input[name="date"]');
-    const tripExpenseDate = els.tripExpenseForm?.querySelector('input[name="date"]');
-    const incomeDate = els.incomeForm?.querySelector('input[name="date"]');
-
-    if (transactionDate && !transactionDate.value) transactionDate.value = today;
-    if (tripExpenseDate && !tripExpenseDate.value) tripExpenseDate.value = today;
-    if (incomeDate && !incomeDate.value) incomeDate.value = today;
-  }
-
-  function monthRange() {
-    const count = Number(els.rangeMonths?.value || DEFAULT_RANGE_MONTHS);
-    const months = [];
-    const [startYear, startMonth] = selectedStartMonth().split("-").map(Number);
-    const startDate = new Date(startYear, startMonth - 1, 1);
-
-    for (let i = 0; i < count; i += 1) {
-      const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    }
-    return months;
-  }
-
-  function analysisRangeMonths() {
-    return monthRange();
-  }
-
-  function housingMonthRange() {
-    return monthRange();
-  }
-
-  function isSettlement(row) {
-    return String(row.booking_type || "expense").toLowerCase() === "settlement";
-  }
-
-  function isExpenseBooking(row) {
-    return !isSettlement(row);
-  }
-
-  function visibleCategories(module) {
-    const user = currentUserName();
-
-    return (state.data.categories || [])
-      .filter((row) => String(row.module || "") === module)
-      .filter((row) => {
-        if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-        if (module === "Urlaub") return true;
-        if (normalizePersonName(row.owner_user || "") === user) return true;
-        return String(row.visible_to_other || "").toLowerCase() === "ja";
+  visibleTrips.forEach((trip) => {
+    const key = getTripGroupKey(trip);
+    if (!unique.has(key)) {
+      unique.set(key, {
+        value: `group:${key}`,
+        label: `${trip.title} – ${trip.destination}`,
+        sortDate: String(trip.start_date || "")
       });
-  }
-
-  function allVisibleMainCategories() {
-    const set = new Set();
-    visibleCategories("Haushalt").forEach((r) => set.add(r.main_category));
-    visibleCategories("Urlaub").forEach((r) => set.add(r.main_category));
-    return [...set].sort();
-  }
-
-  function fillCategoryFilter() {
-    if (!els.filterMainCategory) return;
-
-    const categories = allVisibleMainCategories();
-    const current = els.filterMainCategory.value;
-
-    els.filterMainCategory.innerHTML =
-      '<option value="">Alle Hauptkategorien</option>' +
-      categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join("");
-
-    if (categories.includes(current)) els.filterMainCategory.value = current;
-  }
-
-  function getTripById(tripId) {
-    return (state.data.trips || []).find((row) => row.trip_id === tripId) || null;
-  }
-
-  function resolveTripPeople(trip) {
-    return {
-      owner: normalizePersonName(trip?.owner_user || ""),
-      travelWith: normalizePersonName(trip?.travel_with || "")
-    };
-  }
-
-  function isSharedTrip(trip) {
-    if (!trip) return false;
-
-    const { owner, travelWith } = resolveTripPeople(trip);
-    if (!travelWith) return false;
-
-    if ((owner === PERSON_A && travelWith === PERSON_B) || (owner === PERSON_B && travelWith === PERSON_A)) {
-      return true;
     }
+  });
 
-    const raw = String(trip.travel_with || "").toLowerCase();
-    if (raw.includes("gemeinsam")) return true;
-    if (raw.includes(PERSON_A.toLowerCase()) && raw.includes(PERSON_B.toLowerCase())) return true;
+  return [...unique.values()].sort((a, b) => b.sortDate.localeCompare(a.sortDate));
+}
 
-    return false;
+function populateVacationAnalysisSelect() {
+  if (!els.vacationYearSelect || !els.vacationAnalysisSelect) return;
+
+  const availableYears = getVacationAvailableYears();
+  const currentYearString = String(currentYear());
+
+  if (!els.vacationYearSelect.dataset.initialized) {
+    const defaultYear = availableYears.includes(currentYearString)
+      ? currentYearString
+      : (availableYears[0] || currentYearString);
+
+    els.vacationYearSelect.innerHTML = availableYears.length
+      ? availableYears.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
+      : `<option value="${escapeHtml(currentYearString)}">${escapeHtml(currentYearString)}</option>`;
+
+    els.vacationYearSelect.value = defaultYear;
+    els.vacationYearSelect.dataset.initialized = "true";
+  } else {
+    const currentSelectedYear = els.vacationYearSelect.value || currentYearString;
+    els.vacationYearSelect.innerHTML = availableYears.length
+      ? availableYears.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
+      : `<option value="${escapeHtml(currentYearString)}">${escapeHtml(currentYearString)}</option>`;
+
+    els.vacationYearSelect.value = availableYears.includes(currentSelectedYear)
+      ? currentSelectedYear
+      : (availableYears.includes(currentYearString) ? currentYearString : (availableYears[0] || currentYearString));
   }
 
-  function getTripGroupKey(trip) {
-    if (!trip) return "";
+  const selectedYear = selectedVacationYear();
+  const currentValue = els.vacationAnalysisSelect.value;
+  const entries = buildVacationSelectionEntries(selectedYear);
 
-    const title = String(trip.title || "").trim().toLowerCase();
-    const destination = String(trip.destination || "").trim().toLowerCase();
-    const start = normalizeDateOnly(trip.start_date || "");
-    const end = normalizeDateOnly(trip.end_date || "");
+  els.vacationAnalysisSelect.innerHTML =
+    '<option value="year">Alle Urlaube im gewählten Jahr</option>' +
+    entries.map((entry) => `<option value="${escapeHtml(entry.value)}">${escapeHtml(entry.label)}</option>`).join("");
 
-    if (isSharedTrip(trip)) {
-      return `shared|${title}|${destination}|${start}|${end}|${PERSON_A}|${PERSON_B}`;
-    }
+  const validValues = ["year", ...entries.map((e) => e.value)];
+  els.vacationAnalysisSelect.value = validValues.includes(currentValue) ? currentValue : "year";
+}
 
-    const owner = normalizePersonName(trip.owner_user || "");
-    return `single|${owner}|${title}|${destination}|${start}|${end}`;
-  }
+function resolveVacationPayer(row) {
+  const paidBy = normalizePersonName(row.paid_by || "");
+  if (paidBy === PERSON_A || paidBy === PERSON_B) return paidBy;
 
-  function getTripGroupTrips(seedTrip) {
-    const key = getTripGroupKey(seedTrip);
-    return (state.data.trips || [])
-      .filter((trip) => String(trip.is_deleted || "").toLowerCase() !== "ja")
-      .filter((trip) => getTripGroupKey(trip) === key);
-  }
+  const owner = normalizePersonName(row.owner_user || "");
+  if (owner === PERSON_A || owner === PERSON_B) return owner;
 
-  function getTripGroupTripIds(seedTrip) {
-    return getTripGroupTrips(seedTrip).map((trip) => trip.trip_id);
-  }
+  return currentUserName();
+}
 
-  function isVisibleTrip(trip) {
-    if (!trip) return false;
-    if (String(trip.is_deleted || "").toLowerCase() === "ja") return false;
-    if (isSharedTrip(trip)) return true;
-    return normalizePersonName(trip.owner_user || "") === currentUserName();
-  }
+function getVacationExpenseShares(row, trip) {
+  const amount = Number(row.amount || 0);
+  const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+  const splitPercent = Number(row.split_percent || 100);
+  const payer = resolveVacationPayer(row);
 
-  function getTransactionBaseShares(row, baseAmount) {
-    const amount = Number(baseAmount == null ? row.amount : baseAmount) || 0;
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    const splitPercent = Number(row.split_percent || 100);
-    const owner = normalizePersonName(row.owner_user || "");
+  const shares = {
+    total: amount,
+    [PERSON_A]: 0,
+    [PERSON_B]: 0
+  };
 
-    const shares = { total: amount, [PERSON_A]: 0, [PERSON_B]: 0 };
+  if (isSharedTrip(trip)) {
+    const other = payer === PERSON_A ? PERSON_B : PERSON_A;
 
     if (splitEnabled) {
-      const ownerShare = amount * (splitPercent / 100);
-      const otherShare = amount - ownerShare;
-
-      if (owner === PERSON_A) {
-        shares[PERSON_A] = ownerShare;
-        shares[PERSON_B] = otherShare;
-      } else if (owner === PERSON_B) {
-        shares[PERSON_B] = ownerShare;
-        shares[PERSON_A] = otherShare;
-      } else {
-        shares[PERSON_A] = amount / 2;
-        shares[PERSON_B] = amount / 2;
-      }
-      return shares;
-    }
-
-    if (owner === PERSON_A || owner === PERSON_B) {
-      shares[owner] = amount;
+      const payerShare = amount * (splitPercent / 100);
+      const otherShare = amount - payerShare;
+      shares[payer] = payerShare;
+      shares[other] = otherShare;
     } else {
-      shares[currentUserName()] = amount;
+      shares[payer] = amount;
     }
+
     return shares;
   }
 
-  function getUserShareFromAmount(row, baseAmount) {
-    if (isSettlement(row)) return 0;
-    const shares = getTransactionBaseShares(row, baseAmount);
-    return shares[currentUserName()] || 0;
+  shares[payer] = amount;
+  return shares;
+}
+
+function getVacationCurrentUserAmount(row) {
+  const trip = getTripById(row.trip_id);
+  const shares = getVacationExpenseShares(row, trip);
+  return shares[currentUserName()] || 0;
+}
+
+function isRelevantTripExpenseForUser(row) {
+  if (!row) return false;
+  if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+
+  const trip = getTripById(row.trip_id);
+  if (trip && isSharedTrip(trip)) return true;
+
+  return getVacationCurrentUserAmount(row) > 0;
+}
+
+function isVisibleTripExpense(row) {
+  if (!row) return false;
+  if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
+
+  const trip = getTripById(row.trip_id);
+
+  if (trip && isSharedTrip(trip)) return true;
+  if (trip && isVisibleTrip(trip) && getVacationCurrentUserAmount(row) > 0) return true;
+
+  return isRelevantTripExpenseForUser(row);
+}
+
+function getTripExpenseVisibleAmountForTable(row) {
+  const trip = getTripById(row.trip_id);
+  if (trip && isSharedTrip(trip)) return Number(row.amount || 0);
+  return getVacationCurrentUserAmount(row);
+}
+
+function createVacationCategoryAccumulator() {
+  return VACATION_BUCKETS.reduce((acc, bucket) => {
+    acc[bucket] = { total: 0, max: 0, jana: 0 };
+    return acc;
+  }, {});
+}
+
+function getVacationCategoryBucket(row) {
+  const sub = String(row.sub_category || "").trim().toLowerCase();
+  const main = String(row.main_category || "").trim().toLowerCase();
+
+  if (sub.includes("transport")) return "Transport";
+  if (sub.includes("unterkunft")) return "Unterkunft";
+  if (sub.includes("essen")) return "Essen";
+  if (sub.includes("aktiv")) return "Aktivitäten";
+
+  if (main.includes("transport")) return "Transport";
+  if (main.includes("unterkunft")) return "Unterkunft";
+  if (main.includes("essen")) return "Essen";
+  if (main.includes("aktiv")) return "Aktivitäten";
+
+  return "Sonstiges";
+}
+
+function resolveSelectedVacationTrips() {
+  const selectedYear = selectedVacationYear();
+  const selectedValue = els.vacationAnalysisSelect?.value || "year";
+  const visibleTrips = (state.data.trips || [])
+    .filter(isVisibleTrip)
+    .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
+
+  if (selectedValue === "year") return visibleTrips;
+
+  if (selectedValue.startsWith("group:")) {
+    const groupKey = selectedValue.slice(6);
+    return visibleTrips.filter((trip) => getTripGroupKey(trip) === groupKey);
   }
 
-  function getCurrentUserAmount(row) {
-    return getUserShareFromAmount(row, row.amount);
-  }
+  return visibleTrips;
+}
 
-  function resolveVacationPayer(row) {
-    const paidBy = normalizePersonName(row.paid_by || "");
-    if (paidBy === PERSON_A || paidBy === PERSON_B) return paidBy;
+function computeVacationOverviewData() {
+  const relevantTrips = resolveSelectedVacationTrips();
+  const relevantTripIds = new Set(relevantTrips.map((trip) => trip.trip_id));
+  const visibleExpenses = getVisibleVacationExpenses();
+  const relevantExpenses = visibleExpenses.filter((row) => relevantTripIds.has(row.trip_id));
 
-    const owner = normalizePersonName(row.owner_user || "");
-    if (owner === PERSON_A || owner === PERSON_B) return owner;
+  const categories = createVacationCategoryAccumulator();
 
-    return currentUserName();
-  }
-
-  function getVacationExpenseShares(row, trip) {
-    const amount = Number(row.amount || 0);
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    const splitPercent = Number(row.split_percent || 100);
-    const payer = resolveVacationPayer(row);
-
-    const shares = { total: amount, [PERSON_A]: 0, [PERSON_B]: 0 };
-
-    if (isSharedTrip(trip)) {
-      const other = payer === PERSON_A ? PERSON_B : PERSON_A;
-
-      if (splitEnabled) {
-        const payerShare = amount * (splitPercent / 100);
-        const otherShare = amount - payerShare;
-        shares[payer] = payerShare;
-        shares[other] = otherShare;
-      } else {
-        shares[payer] = amount;
-      }
-      return shares;
-    }
-
-    shares[payer] = amount;
-    return shares;
-  }
-
-  function getVacationCurrentUserAmount(row) {
+  relevantExpenses.forEach((row) => {
+    const bucket = getVacationCategoryBucket(row);
     const trip = getTripById(row.trip_id);
     const shares = getVacationExpenseShares(row, trip);
-    return shares[currentUserName()] || 0;
-  }
 
-  function isRelevantTripExpenseForUser(row) {
-    if (!row) return false;
-    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-
-    const trip = getTripById(row.trip_id);
-    if (trip && isSharedTrip(trip)) return true;
-
-    return getVacationCurrentUserAmount(row) > 0;
-  }
-
-  function isVisibleTripExpense(row) {
-    if (!row) return false;
-    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-
-    const trip = getTripById(row.trip_id);
-    if (trip && isSharedTrip(trip)) return true;
-    if (trip && isVisibleTrip(trip) && getVacationCurrentUserAmount(row) > 0) return true;
-
-    return isRelevantTripExpenseForUser(row);
-  }
-
-  function isVisibleTransaction(row) {
-    if (!row) return false;
-    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-
-    const me = currentUserName();
-    const owner = normalizePersonName(row.owner_user || "");
-    const counterparty = row.counterparty === "-" ? "-" : normalizePersonName(row.counterparty || "");
-
-    if (owner === me) return true;
-    if (isSettlement(row) && counterparty === me) return true;
-
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    if (!splitEnabled) return false;
-
-    const mainCategory = String(row.main_category || "");
-    if (mainCategory === "Wohnen" || mainCategory === "Alltag") return true;
-
-    return String(row.visible_to_other || "").toLowerCase() === "ja";
-  }
-
-  function isVisibleIncome(row) {
-    if (!row) return false;
-    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-    return normalizePersonName(row.owner_user || "") === currentUserName();
-  }
-
-  function isVisibleFixedCost(row) {
-    if (!row) return false;
-    if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
-
-    const user = currentUserName();
-    if (normalizePersonName(row.owner_user || "") === user) return true;
-
-    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-    if (!splitEnabled) return false;
-
-    return String(row.visible_to_other || "").toLowerCase() === "ja";
-  }
-
-  function getRowCurrentUserAmount(row) {
-    if (row && Object.prototype.hasOwnProperty.call(row, "trip_id")) {
-      return getVacationCurrentUserAmount(row);
-    }
-    return getCurrentUserAmount(row);
-  }
-
-  function filteredTransactionsForMonth(month) {
-    return (state.data.transactions || [])
-      .filter(isVisibleTransaction)
-      .filter(isExpenseBooking)
-      .filter((row) => monthFromDate(row.month_key || row.date) === month);
-  }
-
-  function filteredTransactions() {
-    return filteredTransactionsForMonth(selectedAnalysisMonth());
-  }
-
-  function filteredTripExpensesForMonth(month) {
-    return (state.data.tripExpenses || [])
-      .filter(isVisibleTripExpense)
-      .filter((row) => monthFromDate(row.month_key || row.date) === month);
-  }
-
-  function filteredTripExpenses() {
-    return filteredTripExpensesForMonth(selectedAnalysisMonth());
-  }
-
-  function monthlyIncome(month) {
-    return (state.data.income || [])
-      .filter(isVisibleIncome)
-      .filter((row) => monthFromDate(row.month_key || row.date) === month)
-      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  }
-
-  function normalizeFrequency(amount, frequency) {
-    const value = Number(amount || 0);
-    if (frequency === "jährlich") return value / 12;
-    if (frequency === "quartalsweise") return value / 3;
-    return value;
-  }
-
-  function activeFixedCostsForMonth(month) {
-    return (state.data.fixedCosts || [])
-      .filter(isVisibleFixedCost)
-      .filter((row) => {
-        const startMonth = monthFromDate(row.start_month || "");
-        const endMonth = monthFromDate(row.end_month || "");
-        if (startMonth && month < startMonth) return false;
-        if (endMonth && month > endMonth) return false;
-        return true;
-      });
-  }
-
-  function fixedCostsMonthlyTotal(month) {
-    return activeFixedCostsForMonth(month).reduce(
-      (sum, row) => sum + getUserShareFromAmount(row, normalizeFrequency(row.amount, row.frequency)),
-      0
-    );
-  }
-
-  function calculateSettlementEffect(row) {
-    if (!isSettlement(row)) return 0;
-    const me = currentUserName();
-    const amount = Number(row.amount || 0);
-    const paidBy = normalizePersonName(row.paid_by || "");
-    return paidBy === me ? amount : -amount;
-  }
-
-  function calculatePeerBalanceForMonth(month) {
-    const me = currentUserName();
-    let balance = 0;
-
-    const txRows = (state.data.transactions || [])
-      .filter(isVisibleTransaction)
-      .filter((row) => monthFromDate(row.month_key || row.date) === month);
-
-    const tripRows = (state.data.tripExpenses || [])
-      .filter(isVisibleTripExpense)
-      .filter((row) => monthFromDate(row.month_key || row.date) === month);
-
-    txRows.forEach((row) => {
-      if (isSettlement(row)) {
-        balance += calculateSettlementEffect(row);
-        return;
-      }
-
-      const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-      if (!splitEnabled) return;
-
-      const shares = getTransactionBaseShares(row, row.amount);
-      const myShare = shares[me] || 0;
-      const otherShare = shares[otherUserName()] || 0;
-      const paidBy = normalizePersonName(row.paid_by || "");
-
-      if (paidBy === me) balance += otherShare;
-      else balance -= myShare;
-    });
-
-    tripRows.forEach((row) => {
-      const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
-      if (!splitEnabled) return;
-
-      const trip = getTripById(row.trip_id);
-      const shares = getVacationExpenseShares(row, trip);
-      const myShare = shares[me] || 0;
-      const otherShare = shares[otherUserName()] || 0;
-      const payer = resolveVacationPayer(row);
-
-      if (payer === me) balance += otherShare;
-      else balance -= myShare;
-    });
-
-    return balance;
-  }
-
-  function calculateOpenPeerBalanceUntil(month) {
-    const months = analysisRangeMonths().filter((m) => m <= month);
-    return months.reduce((sum, m) => sum + calculatePeerBalanceForMonth(m), 0);
-  }
-
-  function aggregateCategories(rows) {
-    const map = new Map();
-    rows.forEach((row) => {
-      const key = row.main_category || "Ohne Kategorie";
-      const value = getRowCurrentUserAmount(row);
-      map.set(key, (map.get(key) || 0) + value);
-    });
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }
-
-  function aggregateSubcategories(rows, selectedMainCategory) {
-    const map = new Map();
-    rows
-      .filter((row) => !selectedMainCategory || row.main_category === selectedMainCategory)
-      .forEach((row) => {
-        const key = row.sub_category || "Ohne Unterkategorie";
-        const value = getRowCurrentUserAmount(row);
-        map.set(key, (map.get(key) || 0) + value);
-      });
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }
-
-  function populateCategorySelects(module, mainEl, subEl, selectedMain = "", selectedSub = "") {
-    if (!mainEl || !subEl) return;
-
-    const rows = visibleCategories(module);
-    const mains = [...new Set(rows.map((row) => row.main_category))];
-
-    if (!selectedMain || !mains.includes(selectedMain)) {
-      selectedMain = mains[0] || "";
-    }
-
-    mainEl.innerHTML = mains
-      .map((main) => `<option ${main === selectedMain ? "selected" : ""}>${escapeHtml(main)}</option>`)
-      .join("");
-
-    const subs = rows
-      .filter((row) => row.main_category === selectedMain)
-      .map((row) => row.sub_category);
-
-    if (!selectedSub || !subs.includes(selectedSub)) {
-      selectedSub = subs[0] || "";
-    }
-
-    subEl.innerHTML = subs
-      .map((sub) => `<option ${sub === selectedSub ? "selected" : ""}>${escapeHtml(sub)}</option>`)
-      .join("");
-  }
-
-  function wireCategorySelects() {
-    populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory);
-    populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory);
-    populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory);
-
-    els.bookingMainCategory?.addEventListener("change", () => {
-      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, els.bookingMainCategory.value);
-    });
-
-    els.tripMainCategory?.addEventListener("change", () => {
-      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, els.tripMainCategory.value);
-    });
-
-    els.fixedMainCategory?.addEventListener("change", () => {
-      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, els.fixedMainCategory.value);
-    });
-  }
-
-  function populateTripSelect() {
-    if (!els.tripExpenseTripId) return;
-
-    const rows = (state.data.trips || []).filter(isVisibleTrip);
-    els.tripExpenseTripId.innerHTML = rows
-      .map((row) => `<option value="${escapeHtml(row.trip_id)}">${escapeHtml(row.title)} – ${escapeHtml(row.destination)}</option>`)
-      .join("");
-  }
-
-  function getVacationAvailableYears() {
-    const years = new Set();
-
-    (state.data.trips || []).filter(isVisibleTrip).forEach((trip) => {
-      const year = String(trip.start_date || "").slice(0, 4);
-      if (year) years.add(year);
-    });
-
-    (state.data.tripExpenses || []).filter(isVisibleTripExpense).forEach((row) => {
-      const year = String(row.date || "").slice(0, 4);
-      if (year) years.add(year);
-    });
-
-    return [...years].sort((a, b) => Number(b) - Number(a));
-  }
-
-  function buildVacationSelectionEntries(selectedYear) {
-    const visibleTrips = (state.data.trips || [])
-      .filter(isVisibleTrip)
-      .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
-
-    const unique = new Map();
-
-    visibleTrips.forEach((trip) => {
-      const key = getTripGroupKey(trip);
-      if (!unique.has(key)) {
-        unique.set(key, {
-          value: `group:${key}`,
-          label: `${trip.title} – ${trip.destination}`,
-          sortDate: String(trip.start_date || "")
-        });
-      }
-    });
-
-    return [...unique.values()].sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-  }
-
-  function selectedVacationYear() {
-    return els.vacationYearSelect?.value || String(currentYear());
-  }
-
-  function populateVacationAnalysisSelect() {
-    if (!els.vacationYearSelect || !els.vacationAnalysisSelect) return;
-
-    const availableYears = getVacationAvailableYears();
-    const currentYearString = String(currentYear());
-
-    if (!els.vacationYearSelect.dataset.initialized) {
-      const defaultYear = availableYears.includes(currentYearString)
-        ? currentYearString
-        : (availableYears[0] || currentYearString);
-
-      els.vacationYearSelect.innerHTML = availableYears.length
-        ? availableYears.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
-        : `<option value="${escapeHtml(currentYearString)}">${escapeHtml(currentYearString)}</option>`;
-
-      els.vacationYearSelect.value = defaultYear;
-      els.vacationYearSelect.dataset.initialized = "true";
+    categories[bucket].total += shares.total;
+    categories[bucket].max += shares[PERSON_A] || 0;
+    categories[bucket].jana += shares[PERSON_B] || 0;
+  });
+
+  const totals = { total: 0, max: 0, jana: 0 };
+  Object.values(categories).forEach((entry) => {
+    totals.total += entry.total;
+    totals.max += entry.max;
+    totals.jana += entry.jana;
+  });
+
+  const isYearSelection = (els.vacationAnalysisSelect?.value || "year") === "year";
+  const hasSharedTrip = relevantTrips.some((trip) => isSharedTrip(trip));
+  const currentUserTotal = currentUserName() === PERSON_A ? totals.max : totals.jana;
+
+  return {
+    relevantTrips,
+    relevantExpenses,
+    categories,
+    totals,
+    hasSharedTrip,
+    isYearSelection,
+    currentUserTotal
+  };
+}
+
+function computeVacationChartData() {
+  const data = computeVacationOverviewData();
+
+  const showThreeBars = data.hasSharedTrip && !data.isYearSelection;
+  const labels = showThreeBars ? ["Gesamt", PERSON_A, PERSON_B] : [currentUserName()];
+
+  const bucketData = {};
+
+  VACATION_BUCKETS.forEach((bucket) => {
+    if (showThreeBars) {
+      bucketData[bucket] = [
+        data.categories[bucket].total,
+        data.categories[bucket].max,
+        data.categories[bucket].jana
+      ];
     } else {
-      const currentSelectedYear = els.vacationYearSelect.value || currentYearString;
-      els.vacationYearSelect.innerHTML = availableYears.length
-        ? availableYears.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(year)}</option>`).join("")
-        : `<option value="${escapeHtml(currentYearString)}">${escapeHtml(currentYearString)}</option>`;
+      const ownValue = currentUserName() === PERSON_A
+        ? data.categories[bucket].max
+        : data.categories[bucket].jana;
 
-      els.vacationYearSelect.value = availableYears.includes(currentSelectedYear)
-        ? currentSelectedYear
-        : (availableYears.includes(currentYearString) ? currentYearString : (availableYears[0] || currentYearString));
+      bucketData[bucket] = [ownValue];
     }
+  });
 
-    const selectedYear = selectedVacationYear();
-    const currentValue = els.vacationAnalysisSelect.value;
-    const entries = buildVacationSelectionEntries(selectedYear);
+  return { labels, bucketData, data, showThreeBars };
+}
 
-    els.vacationAnalysisSelect.innerHTML =
-      '<option value="year">Alle Urlaube im gewählten Jahr</option>' +
-      entries.map((entry) => `<option value="${escapeHtml(entry.value)}">${escapeHtml(entry.label)}</option>`).join("");
+function renderVacationOverview() {
+  const data = computeVacationOverviewData();
 
-    const validValues = ["year", ...entries.map((e) => e.value)];
-    els.vacationAnalysisSelect.value = validValues.includes(currentValue) ? currentValue : "year";
+  if (els.vacationTotalCost) {
+    const mainValue = data.isYearSelection ? data.currentUserTotal : (data.hasSharedTrip ? data.totals.total : data.currentUserTotal);
+    els.vacationTotalCost.textContent = currency(mainValue);
   }
 
-  function getTransactionsForTable() {
-    return (state.data.transactions || [])
-      .filter(isVisibleTransaction)
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .slice(0, 10);
-  }
-
-  function getTripsForTable() {
-    return (state.data.trips || [])
-      .filter(isVisibleTrip)
-      .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
-  }
-
-  function getTripExpenseVisibleAmountForTable(row) {
-    const trip = getTripById(row.trip_id);
-    if (trip && isSharedTrip(trip)) return Number(row.amount || 0);
-    return getVacationCurrentUserAmount(row);
-  }
-
-  function getTripExpensesForTable() {
-    return (state.data.tripExpenses || [])
-      .filter(isVisibleTripExpense)
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .slice(0, 10);
-  }
-
-  function getIncomeForTable() {
-    return (state.data.income || [])
-      .filter(isVisibleIncome)
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .slice(0, 10);
-  }
-
-  function getAllVisibleCategoriesForTable() {
-    return visibleCategories("Haushalt")
-      .concat(visibleCategories("Urlaub"))
-      .sort((a, b) => {
-        const ka = `${a.module} ${a.main_category} ${a.sub_category}`;
-        const kb = `${b.module} ${b.main_category} ${b.sub_category}`;
-        return ka.localeCompare(kb);
-      });
-  }
-
-  function getAllVisibleFixedCostsForTable() {
-    return (state.data.fixedCosts || [])
-      .filter(isVisibleFixedCost)
-      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
-  }
-
-  function actionButtons(type, record) {
-    const backendId = type === "trip" ? record.trip_id : record.id;
-    return `
-      <div class="table-actions">
-        <button type="button" class="btn btn-ghost btn-xs js-edit" data-type="${escapeHtml(type)}" data-key="${escapeHtml(record._clientKey)}">Bearbeiten</button>
-        <button type="button" class="btn btn-ghost btn-xs js-delete" data-type="${escapeHtml(type)}" data-id="${escapeHtml(backendId)}">Löschen</button>
-      </div>
-    `;
-  }
-
-  function renderKpis(month, txRows, tripRows) {
-    const income = monthlyIncome(month);
-    const txTotal = txRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
-    const tripTotal = tripRows.reduce((sum, row) => sum + getVacationCurrentUserAmount(row), 0);
-    const fixedCosts = fixedCostsMonthlyTotal(month);
-    const totalExpenses = txTotal + tripTotal + fixedCosts;
-    const variableCosts = txTotal + tripTotal;
-    const available = income - totalExpenses;
-    const savingsRate = income ? (available / income) * 100 : 0;
-    const fixedRate = income ? (fixedCosts / income) * 100 : 0;
-    const expenseRate = income ? (totalExpenses / income) * 100 : 0;
-    const variableRate = income ? (variableCosts / income) * 100 : 0;
-
-    const peerBalanceMonth = calculatePeerBalanceForMonth(month);
-    const peerBalanceOpen = calculateOpenPeerBalanceUntil(month);
-    const percentMode = isPercentMode();
-
-    if (els.heroAvailable) {
-      els.heroAvailable.textContent = percentMode ? percent(toPercent(available, income)) : currency(available);
+  if (els.vacationTripCount) {
+    if (data.isYearSelection) {
+      els.vacationTripCount.textContent = `${data.relevantTrips.length}`;
+    } else if (data.hasSharedTrip) {
+      els.vacationTripCount.textContent = `${currency(data.totals.max)} / ${currency(data.totals.jana)}`;
+    } else {
+      els.vacationTripCount.textContent = `${data.relevantTrips.length}`;
     }
-    if (els.heroAvailableSub) {
-      els.heroAvailableSub.textContent = available >= 0 ? "Positiver Monatsüberschuss" : "Monat aktuell negativ";
-    }
-    if (els.heroFixedCosts) {
-      els.heroFixedCosts.textContent = percentMode ? percent(fixedRate) : currency(fixedCosts);
-    }
-    if (els.heroFixedCostsSub) {
-      els.heroFixedCostsSub.textContent =
-        percentMode ? "Fixkostenquote bezogen auf Einkommen" : "Monatliche Fixkostenbelastung";
-    }
-
-    if (els.heroPeerBalance) els.heroPeerBalance.textContent = currency(peerBalanceOpen);
-    if (els.heroPeerLabel) els.heroPeerLabel.textContent = `Offener Saldo ${otherUserName()}`;
-
-    if (els.kpiGrid) {
-      const items = percentMode
-        ? [
-            ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-            ["Ausgaben gesamt", percent(expenseRate), "Ohne Ausgleichsbuchungen"],
-            ["Fixkosten", percent(fixedRate), "Fixkostenquote"],
-            ["Variable Kosten", percent(variableRate), "Haushalt + Urlaub"],
-            ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
-          ]
-        : [
-            ["Einnahmen", currency(income), "Monatliche Einnahmen"],
-            ["Ausgaben gesamt", currency(totalExpenses), "Ohne Ausgleichsbuchungen"],
-            ["Fixkosten", currency(fixedCosts), "Monatliche Fixkosten"],
-            ["Variable Kosten", currency(variableCosts), "Haushalt + Urlaub"],
-            ["Sparquote", percent(savingsRate), "Einnahmen minus Ausgaben"]
-          ];
-
-      els.kpiGrid.innerHTML = items.map(([label, value, sub]) => `
-        <div class="kpi-card">
-          <div class="kpi-label">${escapeHtml(label)}</div>
-          <div class="kpi-value">${escapeHtml(value)}</div>
-          <div class="kpi-sub">${escapeHtml(sub)}</div>
-        </div>
-      `).join("");
-    }
-
-    if (els.monthlySummary) {
-      els.monthlySummary.innerHTML = [
-        ["Analysemonat", month],
-        ["Haushaltsausgaben", currency(txTotal)],
-        ["Urlaubsausgaben", currency(tripTotal)],
-        ["Fixkosten", currency(fixedCosts)],
-        ["Variable Kosten", currency(variableCosts)],
-        ["Ausgaben gesamt", currency(totalExpenses)],
-        ["Überschuss", currency(available)]
-      ].map(([k, v]) => `
-        <div class="summary-row">
-          <div class="key">${escapeHtml(k)}</div>
-          <div class="val">${escapeHtml(v)}</div>
-        </div>
-      `).join("");
-    }
-
-    if (els.insightList) {
-      els.insightList.innerHTML = [
-        ["Saldo Monat", currency(peerBalanceMonth)],
-        ["Offener Gesamtsaldo", currency(peerBalanceOpen)],
-        ["Fixkosten aktiv", `${activeFixedCostsForMonth(month).length} Positionen`],
-        ["Haushaltstransaktionen", `${txRows.length}`],
-        ["Urlaubstransaktionen", `${tripRows.length}`]
-      ].map(([k, v]) => `
-        <div class="summary-row">
-          <div class="key">${escapeHtml(k)}</div>
-          <div class="val">${escapeHtml(v)}</div>
-        </div>
-      `).join("");
-    }
-
-    return {
-      income,
-      txTotal,
-      tripTotal,
-      fixedCosts,
-      totalExpenses,
-      variableCosts,
-      available,
-      peerBalanceMonth,
-      peerBalanceOpen
-    };
   }
 
-  function chartOptions(stacked = false) {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: "#d8e4ff" } }
-      },
-      scales: {
-        x: {
-          stacked,
-          ticks: { color: "#aec1e6" },
-          grid: { color: "rgba(255,255,255,.05)" }
-        },
-        y: {
-          stacked,
-          ticks: { color: "#aec1e6" },
-          grid: { color: "rgba(255,255,255,.05)" }
-        }
-      }
-    };
-  }
+  if (els.vacationKpiTableBody) {
+    const totalBase = data.isYearSelection ? (data.currentUserTotal || 1) : (data.totals.total || 1);
 
-  function createSelectedMonthHighlightPlugin(selectedMonth) {
-    return {
-      id: "selectedMonthHighlight",
-      beforeDatasetsDraw(chart) {
-        if (!selectedMonth) return;
-
-        const { ctx, chartArea, scales } = chart;
-        if (!chartArea || !scales?.x) return;
-
-        const labels = chart.data.labels || [];
-        const index = labels.indexOf(selectedMonth);
-        if (index === -1) return;
-
-        const xScale = scales.x;
-        const centerX = xScale.getPixelForValue(index);
-
-        let leftX = chartArea.left;
-        let rightX = chartArea.right;
-
-        if (labels.length === 1) {
-          leftX = chartArea.left;
-          rightX = chartArea.right;
-        } else {
-          const prevX = index > 0 ? xScale.getPixelForValue(index - 1) : null;
-          const nextX = index < labels.length - 1 ? xScale.getPixelForValue(index + 1) : null;
-
-          if (prevX != null && nextX != null) {
-            leftX = (prevX + centerX) / 2;
-            rightX = (centerX + nextX) / 2;
-          } else if (prevX != null) {
-            const half = (centerX - prevX) / 2;
-            leftX = centerX - half;
-            rightX = centerX + half;
-          } else if (nextX != null) {
-            const half = (nextX - centerX) / 2;
-            leftX = centerX - half;
-            rightX = centerX + half;
-          }
-        }
-
-        ctx.save();
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        ctx.fillRect(leftX, chartArea.top, rightX - leftX, chartArea.bottom - chartArea.top);
-        ctx.restore();
-      }
-    };
-  }
-
-  function ensureChart(name, canvasId, config) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas || typeof Chart === "undefined") return;
-    if (state.charts[name]) state.charts[name].destroy();
-    state.charts[name] = new Chart(canvas, config);
-  }
-
-  function renderCharts(month, txRows, tripRows, metrics) {
-    const months = monthRange();
-    const percentMode = isPercentMode();
-
-    const incomeSeries = months.map((m) => monthlyIncome(m));
-
-    const variableSeriesRaw = months.map((m) => {
-      const tx = filteredTransactionsForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
-      const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + getVacationCurrentUserAmount(row), 0);
-      return tx + trip;
-    });
-
-    const fixedSeriesRaw = months.map((m) => fixedCostsMonthlyTotal(m));
-    const totalExpenseSeriesRaw = variableSeriesRaw.map((val, i) => val + fixedSeriesRaw[i]);
-
-    const fixedSeries = percentMode ? fixedSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i])) : fixedSeriesRaw;
-    const variableSeries = percentMode ? variableSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i])) : variableSeriesRaw;
-    const totalExpenseSeries = percentMode ? totalExpenseSeriesRaw.map((v, i) => toPercent(v, incomeSeries[i])) : totalExpenseSeriesRaw;
-
-    const datasets = percentMode
-      ? [
-          { label: "Totale Kosten", data: totalExpenseSeries, borderColor: "#4f7cff", backgroundColor: "rgba(79,124,255,.15)", fill: false, tension: 0.25 },
-          { label: "Fixkosten", data: fixedSeries, borderColor: "#ffbe3d", backgroundColor: "rgba(255,190,61,.15)", fill: false, tension: 0.25 },
-          { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
-        ]
-      : [
-          { label: "Einnahmen", data: incomeSeries, borderColor: "#13c296", backgroundColor: "rgba(19,194,150,.15)", fill: false, tension: 0.25 },
-          { label: "Totale Kosten", data: totalExpenseSeries, borderColor: "#4f7cff", backgroundColor: "rgba(79,124,255,.15)", fill: false, tension: 0.25 },
-          { label: "Fixkosten", data: fixedSeries, borderColor: "#ffbe3d", backgroundColor: "rgba(255,190,61,.15)", fill: false, tension: 0.25 },
-          { label: "Variable Kosten", data: variableSeries, borderColor: "#ff6d7a", backgroundColor: "rgba(255,109,122,.15)", fill: false, tension: 0.25 }
-        ];
-
-    ensureChart("masterChart", "masterChart", {
-      type: "line",
-      data: { labels: months, datasets },
-      options: chartOptions(),
-      plugins: [createSelectedMonthHighlightPlugin(selectedAnalysisMonth())]
-    });
-
-    const fixedMonthRows = activeFixedCostsForMonth(month);
-    const fixedAgg = new Map();
-    fixedMonthRows.forEach((row) => {
-      const key = row.main_category || "Ohne Kategorie";
-      const share = getUserShareFromAmount(row, normalizeFrequency(row.amount, row.frequency));
-      fixedAgg.set(key, (fixedAgg.get(key) || 0) + share);
-    });
-
-    if (els.fixedCompositionLabel) els.fixedCompositionLabel.textContent = "Analysemonat";
-
-    ensureChart("fixedCompositionChart", "fixedCompositionChart", {
-      type: "bar",
-      data: {
-        labels: [...fixedAgg.keys()],
-        datasets: [{
-          label: percentMode ? "Fixkosten %" : "Fixkosten",
-          data: [...fixedAgg.values()].map((v) => percentMode ? toPercent(v, metrics.income) : v),
-          backgroundColor: "rgba(255,190,61,.82)"
-        }]
-      },
-      options: chartOptions()
-    });
-
-    const variableRows = txRows.concat(tripRows);
-    const variableAgg = new Map();
-    variableRows.forEach((row) => {
-      const key = row.main_category || "Ohne Kategorie";
-      variableAgg.set(key, (variableAgg.get(key) || 0) + getRowCurrentUserAmount(row));
-    });
-
-    if (els.variableCompositionLabel) els.variableCompositionLabel.textContent = "Analysemonat";
-
-    ensureChart("variableCompositionChart", "variableCompositionChart", {
-      type: "bar",
-      data: {
-        labels: [...variableAgg.keys()],
-        datasets: [{
-          label: percentMode ? "Variable Kosten %" : "Variable Kosten",
-          data: [...variableAgg.values()].map((v) => percentMode ? toPercent(v, metrics.income) : v),
-          backgroundColor: "rgba(79,124,255,.82)"
-        }]
-      },
-      options: chartOptions()
-    });
-
-    const selectedMainCategory = els.filterMainCategory?.value || "";
-    const breakdownAggregate = selectedMainCategory
-      ? aggregateSubcategories(variableRows, selectedMainCategory)
-      : aggregateCategories(variableRows);
-
-    ensureChart("categoryBreakdownChart", "categoryBreakdownChart", {
-      type: "bar",
-      data: {
-        labels: breakdownAggregate.map((row) => row[0]),
-        datasets: [{
-          label: selectedMainCategory
-            ? `Unterkategorien ${selectedMainCategory}${percentMode ? " %" : ""}`
-            : `Hauptkategorien${percentMode ? " %" : ""}`,
-          data: breakdownAggregate.map((row) => percentMode ? toPercent(row[1], metrics.income) : row[1]),
-          backgroundColor: "rgba(97,201,255,.82)"
-        }]
-      },
-      options: chartOptions()
-    });
-  }
-
-  function renderCategoryTable(rows) {
-    if (!els.categoryTableBody) return;
-
-    const aggregate = aggregateCategories(rows);
-    const total = aggregate.reduce((sum, row) => sum + row[1], 0) || 1;
-
-    els.categoryTableBody.innerHTML = aggregate.length
-      ? aggregate.map(([name, amount]) => `
+    const summaryRow = data.isYearSelection
+      ? `
+        <tr>
+          <td><strong>Ausgaben gesamt Nutzer</strong></td>
+          <td>${escapeHtml(currency(data.currentUserTotal))}</td>
+          <td>${escapeHtml("100,0 %")}</td>
+        </tr>
+      `
+      : data.hasSharedTrip
+        ? `
           <tr>
-            <td>${escapeHtml(name)}</td>
-            <td>${escapeHtml(currency(amount))}</td>
-            <td>${escapeHtml(percent((amount / total) * 100))}</td>
+            <td><strong>Ausgaben gesamt Urlaub</strong></td>
+            <td>
+              Gesamt ${escapeHtml(currency(data.totals.total))}<br>
+              ${escapeHtml(PERSON_A)} ${escapeHtml(currency(data.totals.max))}<br>
+              ${escapeHtml(PERSON_B)} ${escapeHtml(currency(data.totals.jana))}
+            </td>
+            <td>
+              Gesamt 100,0 %<br>
+              ${escapeHtml(PERSON_A)} ${escapeHtml(percent((data.totals.max / (data.totals.total || 1)) * 100))}<br>
+              ${escapeHtml(PERSON_B)} ${escapeHtml(percent((data.totals.jana / (data.totals.total || 1)) * 100))}
+            </td>
           </tr>
-        `).join("")
-      : '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
-  }
-
-  function renderMonthOverviewTable(metrics) {
-    if (!els.monthOverviewTableBody) return;
-
-    const percentMode = isPercentMode();
-    const income = metrics.income || 0;
-
-    const rows = [
-      ["Einnahmen", percentMode ? "100,0 %" : currency(metrics.income)],
-      ["Haushalt", percentMode ? percent(toPercent(metrics.txTotal, income)) : currency(metrics.txTotal)],
-      ["Urlaub", percentMode ? percent(toPercent(metrics.tripTotal, income)) : currency(metrics.tripTotal)],
-      ["Fixkosten", percentMode ? percent(toPercent(metrics.fixedCosts, income)) : currency(metrics.fixedCosts)],
-      ["Variable Kosten", percentMode ? percent(toPercent(metrics.variableCosts, income)) : currency(metrics.variableCosts)],
-      ["Gesamtausgaben", percentMode ? percent(toPercent(metrics.totalExpenses, income)) : currency(metrics.totalExpenses)],
-      ["Überschuss", percentMode ? percent(toPercent(metrics.available, income)) : currency(metrics.available)],
-      ["Saldo Monat", currency(metrics.peerBalanceMonth)],
-      ["Offener Gesamtsaldo", currency(metrics.peerBalanceOpen)]
-    ];
-
-    els.monthOverviewTableBody.innerHTML = rows.map(([label, value]) => `
-      <tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${escapeHtml(value)}</td>
-      </tr>
-    `).join("");
-  }
-
-  function renderRangeOverviewTable() {
-    if (!els.rangeOverviewTableBody) return;
-
-    const months = analysisRangeMonths();
-    const income = months.reduce((sum, m) => sum + monthlyIncome(m), 0);
-    const txTotal = months.reduce((sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
-    const tripTotal = months.reduce((sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getVacationCurrentUserAmount(row), 0), 0);
-    const fixedCosts = months.reduce((sum, m) => sum + fixedCostsMonthlyTotal(m), 0);
-    const variableCosts = txTotal + tripTotal;
-    const totalExpenses = variableCosts + fixedCosts;
-    const available = income - totalExpenses;
-    const percentMode = isPercentMode();
-    const openBalance = calculateOpenPeerBalanceUntil(selectedAnalysisMonth());
-
-    const rows = [
-      ["Einnahmen", percentMode ? "100,0 %" : currency(income)],
-      ["Haushalt", percentMode ? percent(toPercent(txTotal, income)) : currency(txTotal)],
-      ["Urlaub", percentMode ? percent(toPercent(tripTotal, income)) : currency(tripTotal)],
-      ["Fixkosten", percentMode ? percent(toPercent(fixedCosts, income)) : currency(fixedCosts)],
-      ["Variable Kosten", percentMode ? percent(toPercent(variableCosts, income)) : currency(variableCosts)],
-      ["Gesamtausgaben", percentMode ? percent(toPercent(totalExpenses, income)) : currency(totalExpenses)],
-      ["Überschuss", percentMode ? percent(toPercent(available, income)) : currency(available)],
-      ["Offener Gesamtsaldo", currency(openBalance)]
-    ];
-
-    els.rangeOverviewTableBody.innerHTML = rows.map(([label, value]) => `
-      <tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${escapeHtml(value)}</td>
-      </tr>
-    `).join("");
-  }
-
-  function renderCategoryCompareTable(month, txRows, tripRows) {
-    if (!els.categoryCompareTableBody) return;
-
-    const monthRows = txRows.concat(tripRows);
-    const monthAgg = new Map();
-    aggregateCategories(monthRows).forEach(([key, value]) => monthAgg.set(key, value));
-
-    const rangeAgg = new Map();
-    analysisRangeMonths().forEach((m) => {
-      const rows = filteredTransactionsForMonth(m).concat(filteredTripExpensesForMonth(m));
-      aggregateCategories(rows).forEach(([key, value]) => {
-        rangeAgg.set(key, (rangeAgg.get(key) || 0) + value);
-      });
-    });
-
-    const keys = [...new Set([...monthAgg.keys(), ...rangeAgg.keys()])].sort();
-    const percentMode = isPercentMode();
-    const monthIncome = monthlyIncome(month);
-    const rangeIncome = analysisRangeMonths().reduce((sum, m) => sum + monthlyIncome(m), 0);
-
-    els.categoryCompareTableBody.innerHTML = keys.length
-      ? keys.map((key) => `
+        `
+        : `
           <tr>
-            <td>${escapeHtml(key)}</td>
-            <td>${escapeHtml(percentMode ? percent(toPercent(monthAgg.get(key) || 0, monthIncome)) : currency(monthAgg.get(key) || 0))}</td>
-            <td>${escapeHtml(percentMode ? percent(toPercent(rangeAgg.get(key) || 0, rangeIncome)) : currency(rangeAgg.get(key) || 0))}</td>
+            <td><strong>Ausgaben gesamt Urlaub</strong></td>
+            <td>${escapeHtml(currency(data.currentUserTotal))}</td>
+            <td>${escapeHtml("100,0 %")}</td>
           </tr>
-        `).join("")
-      : '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
-  }
+        `;
 
-  function getVisibleVacationExpenses() {
-    return (state.data.tripExpenses || []).filter(isVisibleTripExpense);
-  }
+    const categoryRows = VACATION_BUCKETS.map((name) => {
+      const values = data.categories[name];
 
-  function getVacationCategoryBucket(row) {
-    const sub = String(row.sub_category || "").trim().toLowerCase();
-    const main = String(row.main_category || "").trim().toLowerCase();
-
-    if (sub.includes("transport")) return "Transport";
-    if (sub.includes("unterkunft")) return "Unterkunft";
-    if (sub.includes("essen")) return "Essen";
-    if (sub.includes("aktiv")) return "Aktivitäten";
-
-    if (main.includes("transport")) return "Transport";
-    if (main.includes("unterkunft")) return "Unterkunft";
-    if (main.includes("essen")) return "Essen";
-    if (main.includes("aktiv")) return "Aktivitäten";
-
-    return "Sonstiges";
-  }
-
-  function createVacationCategoryAccumulator() {
-    return VACATION_BUCKETS.reduce((acc, bucket) => {
-      acc[bucket] = { total: 0, max: 0, jana: 0 };
-      return acc;
-    }, {});
-  }
-
-  function resolveSelectedVacationTrips() {
-    const selectedYear = selectedVacationYear();
-    const selectedValue = els.vacationAnalysisSelect?.value || "year";
-    const visibleTrips = (state.data.trips || [])
-      .filter(isVisibleTrip)
-      .filter((trip) => String(trip.start_date || "").slice(0, 4) === selectedYear);
-
-    if (selectedValue === "year") return visibleTrips;
-
-    if (selectedValue.startsWith("group:")) {
-      const groupKey = selectedValue.slice(6);
-      return visibleTrips.filter((trip) => getTripGroupKey(trip) === groupKey);
-    }
-
-    return visibleTrips;
-  }
-
-  function computeVacationOverviewData() {
-    const relevantTrips = resolveSelectedVacationTrips();
-    const relevantTripIds = new Set(relevantTrips.map((trip) => trip.trip_id));
-    const visibleExpenses = getVisibleVacationExpenses();
-    const relevantExpenses = visibleExpenses.filter((row) => relevantTripIds.has(row.trip_id));
-
-    const categories = createVacationCategoryAccumulator();
-
-    relevantExpenses.forEach((row) => {
-      const bucket = getVacationCategoryBucket(row);
-      const trip = getTripById(row.trip_id);
-      const shares = getVacationExpenseShares(row, trip);
-
-      categories[bucket].total += shares.total;
-      categories[bucket].max += shares[PERSON_A] || 0;
-      categories[bucket].jana += shares[PERSON_B] || 0;
-    });
-
-    const totals = { total: 0, max: 0, jana: 0 };
-    Object.values(categories).forEach((entry) => {
-      totals.total += entry.total;
-      totals.max += entry.max;
-      totals.jana += entry.jana;
-    });
-
-    const hasSharedTrip = relevantTrips.some((trip) => isSharedTrip(trip));
-
-    return {
-      relevantTrips,
-      relevantExpenses,
-      categories,
-      totals,
-      hasSharedTrip
-    };
-  }
-
-  function computeVacationChartData() {
-    const data = computeVacationOverviewData();
-    const labels = data.hasSharedTrip ? ["Gesamt", PERSON_A, PERSON_B] : [currentUserName()];
-
-    const bucketData = {};
-    VACATION_BUCKETS.forEach((bucket) => {
-      if (data.hasSharedTrip) {
-        bucketData[bucket] = [
-          data.categories[bucket].total,
-          data.categories[bucket].max,
-          data.categories[bucket].jana
-        ];
-      } else {
-        const ownValue = currentUserName() === PERSON_A
-          ? data.categories[bucket].max
-          : data.categories[bucket].jana;
-        bucketData[bucket] = [ownValue];
-      }
-    });
-
-    return { labels, bucketData, data };
-  }
-
-  function createCanvasPattern(canvas, type, color) {
-    if (!canvas) return color;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return color;
-
-    const patternCanvas = document.createElement("canvas");
-    patternCanvas.width = 16;
-    patternCanvas.height = 16;
-    const pctx = patternCanvas.getContext("2d");
-    if (!pctx) return color;
-
-    pctx.clearRect(0, 0, 16, 16);
-    pctx.strokeStyle = color;
-    pctx.fillStyle = color;
-    pctx.lineWidth = 2;
-
-    if (type === "dotted") {
-      for (let x = 4; x < 16; x += 8) {
-        for (let y = 4; y < 16; y += 8) {
-          pctx.beginPath();
-          pctx.arc(x, y, 1.6, 0, Math.PI * 2);
-          pctx.fill();
-        }
-      }
-    } else if (type === "striped") {
-      for (let i = -16; i < 16; i += 6) {
-        pctx.beginPath();
-        pctx.moveTo(i, 16);
-        pctx.lineTo(i + 16, 0);
-        pctx.stroke();
-      }
-    }
-
-    return ctx.createPattern(patternCanvas, "repeat") || color;
-  }
-
-  function renderVacationOverview() {
-    const data = computeVacationOverviewData();
-
-    if (els.vacationTotalCost) els.vacationTotalCost.textContent = currency(data.totals.total);
-    if (els.vacationTripCount) els.vacationTripCount.textContent = String(data.relevantTrips.length);
-
-    if (els.vacationKpiTableBody) {
-      const totalBase = data.totals.total || 1;
-
-      const rows = VACATION_BUCKETS.map((name) => {
-        const values = data.categories[name];
-
-        if (data.hasSharedTrip) {
-          return `
-            <tr>
-              <td>${escapeHtml(name)}</td>
-              <td>
-                Gesamt ${escapeHtml(currency(values.total))}<br>
-                ${escapeHtml(PERSON_A)} ${escapeHtml(currency(values.max))}<br>
-                ${escapeHtml(PERSON_B)} ${escapeHtml(currency(values.jana))}
-              </td>
-              <td>
-                Gesamt ${escapeHtml(percent((values.total / totalBase) * 100))}<br>
-                ${escapeHtml(PERSON_A)} ${escapeHtml(percent((values.max / totalBase) * 100))}<br>
-                ${escapeHtml(PERSON_B)} ${escapeHtml(percent((values.jana / totalBase) * 100))}
-              </td>
-            </tr>
-          `;
-        }
-
-        const ownValue = currentUserName() === PERSON_A ? values.max : values.jana;
+      if (!data.isYearSelection && data.hasSharedTrip) {
         return `
           <tr>
             <td>${escapeHtml(name)}</td>
-            <td>${escapeHtml(currency(ownValue))}</td>
-            <td>${escapeHtml(percent((ownValue / totalBase) * 100))}</td>
+            <td>
+              Gesamt ${escapeHtml(currency(values.total))}<br>
+              ${escapeHtml(PERSON_A)} ${escapeHtml(currency(values.max))}<br>
+              ${escapeHtml(PERSON_B)} ${escapeHtml(currency(values.jana))}
+            </td>
+            <td>
+              Gesamt ${escapeHtml(percent((values.total / totalBase) * 100))}<br>
+              ${escapeHtml(PERSON_A)} ${escapeHtml(percent((values.max / totalBase) * 100))}<br>
+              ${escapeHtml(PERSON_B)} ${escapeHtml(percent((values.jana / totalBase) * 100))}
+            </td>
           </tr>
         `;
-      }).join("");
-
-      els.vacationKpiTableBody.innerHTML = rows || '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
-    }
-
-    const chartPayload = computeVacationChartData();
-    const canvas = document.getElementById("vacationCompositionChart");
-
-    const baseColors = {
-      Transport: "rgba(79,124,255,0.82)",
-      Unterkunft: "rgba(255,190,61,0.82)",
-      Essen: "rgba(19,194,150,0.82)",
-      Aktivitäten: "rgba(255,109,122,0.82)",
-      Sonstiges: "rgba(97,201,255,0.82)"
-    };
-
-    const datasets = [];
-    VACATION_BUCKETS.forEach((bucket) => {
-      const color = baseColors[bucket];
-
-      if (chartPayload.data.hasSharedTrip) {
-        datasets.push({
-          label: bucket,
-          data: chartPayload.bucketData[bucket],
-          backgroundColor: [
-            color,
-            createCanvasPattern(canvas, "dotted", color),
-            createCanvasPattern(canvas, "striped", color)
-          ],
-          borderColor: [color, color, color],
-          borderWidth: 1,
-          stack: "vacationSummary"
-        });
-      } else {
-        datasets.push({
-          label: bucket,
-          data: chartPayload.bucketData[bucket],
-          backgroundColor: color,
-          borderColor: color,
-          borderWidth: 1,
-          stack: "vacationSummary"
-        });
-      }
-    });
-
-    ensureChart("vacationCompositionChart", "vacationCompositionChart", {
-      type: "bar",
-      data: {
-        labels: chartPayload.labels,
-        datasets
-      },
-      options: chartOptions(true)
-    });
-  }
-
-  function getHousingTransactionRowsForMonth(month) {
-    return (state.data.transactions || [])
-      .filter((row) => String(row.is_deleted || "").toLowerCase() !== "ja")
-      .filter(isExpenseBooking)
-      .filter((row) => String(row.main_category || "") === "Wohnen")
-      .filter((row) => String(row.sub_category || "") !== "Kaution")
-      .filter((row) => monthFromDate(row.month_key || row.date) === month);
-  }
-
-  function getHousingFixedRowsForMonth(month) {
-    return (state.data.fixedCosts || [])
-      .filter((row) => String(row.is_deleted || "").toLowerCase() !== "ja")
-      .filter((row) => String(row.main_category || "") === "Wohnen")
-      .filter((row) => String(row.sub_category || "") !== "Kaution")
-      .filter((row) => {
-        const startMonth = monthFromDate(row.start_month || "");
-        const endMonth = monthFromDate(row.end_month || "");
-        if (startMonth && month < startMonth) return false;
-        if (endMonth && month > endMonth) return false;
-        return true;
-      });
-  }
-
-  function getCombinedHousingCategoryMapForMonth(month) {
-    const map = new Map();
-
-    getHousingTransactionRowsForMonth(month).forEach((row) => {
-      const key = row.sub_category || "Ohne Unterkategorie";
-      map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
-    });
-
-    getHousingFixedRowsForMonth(month).forEach((row) => {
-      const key = row.sub_category || "Ohne Unterkategorie";
-      map.set(key, (map.get(key) || 0) + normalizeFrequency(row.amount, row.frequency));
-    });
-
-    return map;
-  }
-
-  function computeHousingOverviewData() {
-    const analysisMonth = selectedAnalysisMonth();
-    const months = housingMonthRange();
-
-    const monthMap = getCombinedHousingCategoryMapForMonth(analysisMonth);
-    const monthTotal = [...monthMap.values()].reduce((sum, value) => sum + value, 0);
-
-    const totalByCategory = new Map();
-    const totalPerMonth = [];
-
-    months.forEach((month) => {
-      const map = getCombinedHousingCategoryMapForMonth(month);
-      const monthValue = [...map.values()].reduce((sum, value) => sum + value, 0);
-      totalPerMonth.push(monthValue);
-
-      map.forEach((value, key) => {
-        totalByCategory.set(key, (totalByCategory.get(key) || 0) + value);
-      });
-    });
-
-    const averageTotal = months.length
-      ? totalPerMonth.reduce((sum, value) => sum + value, 0) / months.length
-      : 0;
-
-    return {
-      analysisMonth,
-      months,
-      monthMap,
-      monthTotal,
-      averageTotal,
-      categoryCount: new Set([...monthMap.keys(), ...totalByCategory.keys()]).size
-    };
-  }
-
-  function renderHousingTable(tableBody, valueMap, totalValue, mode, valueLabel) {
-    if (!tableBody) return;
-
-    const entries = [...valueMap.entries()].sort((a, b) => b[1] - a[1]);
-
-    tableBody.innerHTML = entries.length
-      ? entries.map(([name, value]) => `
-          <tr>
-            <td>${escapeHtml(name)}</td>
-            <td>${escapeHtml(mode === "percent" ? percent(totalValue ? (value / totalValue) * 100 : 0) : currency(value))}</td>
-            <td>${escapeHtml(percent(totalValue ? (value / totalValue) * 100 : 0))}</td>
-          </tr>
-        `).join("")
-      : `<tr><td colspan="3" class="table-empty">Keine ${escapeHtml(valueLabel)} vorhanden</td></tr>`;
-  }
-
-  function renderHousingOverview() {
-    const data = computeHousingOverviewData();
-    const mode = housingDisplayMode();
-
-    if (els.housingMonthTotal) els.housingMonthTotal.textContent = currency(data.monthTotal);
-    if (els.housingAverageTotal) els.housingAverageTotal.textContent = currency(data.averageTotal);
-    if (els.housingCategoryCount) els.housingCategoryCount.textContent = String(data.categoryCount || 0);
-
-    renderHousingTable(els.housingMonthTableBody, data.monthMap, data.monthTotal, mode, "Daten");
-
-    const allCategoryKeys = [...new Set(
-      data.months.flatMap((month) => [...getCombinedHousingCategoryMapForMonth(month).keys()])
-    )].sort();
-
-    const totalSeriesRaw = data.months.map((month) =>
-      [...getCombinedHousingCategoryMapForMonth(month).values()].reduce((sum, value) => sum + value, 0)
-    );
-
-    const totalSeries = mode === "percent" ? totalSeriesRaw.map(() => 100) : totalSeriesRaw;
-
-    const datasets = [
-      {
-        label: "Gesamtkosten Wohnen",
-        data: totalSeries,
-        borderColor: "rgba(255,255,255,0.95)",
-        backgroundColor: "rgba(255,255,255,0.15)",
-        fill: false,
-        tension: 0.25
-      },
-      ...allCategoryKeys.map((key, idx) => {
-        const rawValues = data.months.map((month) => getCombinedHousingCategoryMapForMonth(month).get(key) || 0);
-        const displayValues = mode === "percent"
-          ? rawValues.map((value, i) => {
-              const total = totalSeriesRaw[i] || 0;
-              return total ? (value / total) * 100 : 0;
-            })
-          : rawValues;
-
-        const colors = [
-          "rgba(79,124,255,0.95)",
-          "rgba(255,190,61,0.95)",
-          "rgba(19,194,150,0.95)",
-          "rgba(255,109,122,0.95)",
-          "rgba(97,201,255,0.95)",
-          "rgba(159,122,234,0.95)",
-          "rgba(249,115,22,0.95)"
-        ];
-
-        return {
-          label: key,
-          data: displayValues,
-          borderColor: colors[idx % colors.length],
-          backgroundColor: colors[idx % colors.length],
-          fill: false,
-          tension: 0.25
-        };
-      })
-    ];
-
-    ensureChart("housingTrendChart", "housingTrendChart", {
-      type: "line",
-      data: { labels: data.months, datasets },
-      options: chartOptions()
-    });
-  }
-
-  function renderTransactionsTable() {
-    if (!els.transactionsTableBody) return;
-    const rows = getTransactionsForTable();
-
-    els.transactionsTableBody.innerHTML = rows.length
-      ? rows.map((row) => `
-          <tr>
-            <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
-            <td>${escapeHtml(row.title)}</td>
-            <td>${escapeHtml(
-              isSettlement(row)
-                ? `Verrechnung / ${row.counterparty || PERSON_B}`
-                : `${row.main_category} / ${row.sub_category}`
-            )}</td>
-            <td>${escapeHtml(isSettlement(row) ? currency(row.amount) : currency(getCurrentUserAmount(row)))}</td>
-            <td>${escapeHtml(row.paid_by)}</td>
-            <td>${actionButtons("transaction", row)}</td>
-          </tr>
-        `).join("")
-      : '<tr><td colspan="6" class="table-empty">Noch keine Haushaltsbuchungen vorhanden</td></tr>';
-  }
-
-  function renderTripsTable() {
-    if (!els.tripsTableBody) return;
-    const rows = getTripsForTable();
-
-    els.tripsTableBody.innerHTML = rows.length
-      ? rows.map((row) => `
-          <tr>
-            <td>${escapeHtml(row.title)}</td>
-            <td>${escapeHtml(row.destination)}</td>
-            <td>${escapeHtml(`${normalizeDateOnly(row.start_date)} – ${normalizeDateOnly(row.end_date)}`)}</td>
-            <td>${escapeHtml(currency(row.planned_budget))}</td>
-            <td>${actionButtons("trip", row)}</td>
-          </tr>
-        `).join("")
-      : '<tr><td colspan="5" class="table-empty">Noch keine Reisen vorhanden</td></tr>';
-  }
-
-  function renderTripExpensesTable() {
-    if (!els.tripExpensesTableBody) return;
-    const tripMap = new Map((state.data.trips || []).map((row) => [row.trip_id, row.title]));
-    const rows = getTripExpensesForTable();
-
-    els.tripExpensesTableBody.innerHTML = rows.length
-      ? rows.map((row) => `
-          <tr>
-            <td>${escapeHtml(tripMap.get(row.trip_id) || row.trip_id)}</td>
-            <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
-            <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
-            <td>${escapeHtml(currency(getTripExpenseVisibleAmountForTable(row)))}</td>
-            <td>${escapeHtml(row.paid_by)}</td>
-            <td>${actionButtons("tripExpense", row)}</td>
-          </tr>
-        `).join("")
-      : '<tr><td colspan="6" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
-  }
-
-  function renderCategoriesTable() {
-    if (!els.categoriesTableBody) return;
-    const rows = getAllVisibleCategoriesForTable();
-
-    els.categoriesTableBody.innerHTML = rows.length
-      ? rows.map((row) => `
-          <tr>
-            <td>${escapeHtml(row.module)}</td>
-            <td>${escapeHtml(row.main_category)}</td>
-            <td>${escapeHtml(row.sub_category)}</td>
-            <td>${actionButtons("category", row)}</td>
-          </tr>
-        `).join("")
-      : '<tr><td colspan="4" class="table-empty">Noch keine Kategorien vorhanden</td></tr>';
-  }
-
-  function renderFixedCostsTable() {
-    if (!els.fixedCostsTableBody) return;
-    const rows = getAllVisibleFixedCostsForTable();
-
-    els.fixedCostsTableBody.innerHTML = rows.length
-      ? rows.map((row) => `
-          <tr>
-            <td>${escapeHtml(row.title)}</td>
-            <td>${escapeHtml(currency(getUserShareFromAmount(row, row.amount)))}</td>
-            <td>${escapeHtml(row.frequency)}</td>
-            <td>${actionButtons("fixedCost", row)}</td>
-          </tr>
-        `).join("")
-      : '<tr><td colspan="4" class="table-empty">Noch keine Fixkosten vorhanden</td></tr>';
-  }
-
-  function renderIncomeTable() {
-    if (!els.incomeTableBody) return;
-    const rows = getIncomeForTable();
-
-    els.incomeTableBody.innerHTML = rows.length
-      ? rows.map((row) => `
-          <tr>
-            <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
-            <td>${escapeHtml(row.income_type)}</td>
-            <td>${escapeHtml(currency(row.amount))}</td>
-            <td>${actionButtons("income", row)}</td>
-          </tr>
-        `).join("")
-      : '<tr><td colspan="4" class="table-empty">Noch keine Einnahmen vorhanden</td></tr>';
-  }
-
-  function renderDashboard() {
-    const month = selectedAnalysisMonth();
-    const txRows = filteredTransactions();
-    const tripRows = filteredTripExpenses();
-    const metrics = renderKpis(month, txRows, tripRows);
-
-    renderCharts(month, txRows, tripRows, metrics);
-    renderCategoryTable(txRows.concat(tripRows));
-    renderMonthOverviewTable(metrics);
-    renderRangeOverviewTable();
-    renderCategoryCompareTable(month, txRows, tripRows);
-  }
-
-  function renderAll() {
-    fillCategoryFilter();
-    populateVacationAnalysisSelect();
-    renderDashboard();
-    renderHousingOverview();
-    renderVacationOverview();
-    renderTransactionsTable();
-    renderTripsTable();
-    renderTripExpensesTable();
-    renderCategoriesTable();
-    renderFixedCostsTable();
-    renderIncomeTable();
-    populateTripSelect();
-    populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, els.bookingMainCategory?.value);
-    populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, els.tripMainCategory?.value);
-    populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, els.fixedMainCategory?.value);
-    updateTransactionFormVisibility();
-  }
-
-  async function loadAll() {
-    clearMessage();
-
-    try {
-      if (els.syncStatus) els.syncStatus.textContent = "Synchronisierung läuft...";
-
-      const result = await apiGet("getAll");
-      state.data = withClientKeys(result.data || {
-        income: [],
-        transactions: [],
-        trips: [],
-        tripExpenses: [],
-        categories: [],
-        fixedCosts: []
-      });
-
-      renderAll();
-
-      if (els.syncStatus) {
-        els.syncStatus.textContent = `Synchronisiert: ${new Date().toLocaleString("de-DE")}`;
       }
 
-      showMessage("Daten erfolgreich geladen.", "success");
-    } catch (error) {
-      if (els.syncStatus) els.syncStatus.textContent = "Synchronisierung fehlgeschlagen";
-      showMessage(error.message || "Fehler beim Laden.", "error");
-      console.error(error);
-    }
+      const ownValue = currentUserName() === PERSON_A ? values.max : values.jana;
+      return `
+        <tr>
+          <td>${escapeHtml(name)}</td>
+          <td>${escapeHtml(currency(ownValue))}</td>
+          <td>${escapeHtml(percent((ownValue / totalBase) * 100))}</td>
+        </tr>
+      `;
+    }).join("");
+
+    els.vacationKpiTableBody.innerHTML = summaryRow + categoryRows;
   }
 
-  function formToObject(form) {
-    const data = Object.fromEntries(new FormData(form).entries());
-    const user = currentUser();
-    const normalizedUser = currentUserName();
+  const chartPayload = computeVacationChartData();
+  const canvas = document.getElementById("vacationCompositionChart");
 
-    delete data._clientKey;
+  const baseColors = {
+    Transport: "rgba(79,124,255,0.82)",
+    Unterkunft: "rgba(255,190,61,0.82)",
+    Essen: "rgba(19,194,150,0.82)",
+    Aktivitäten: "rgba(255,109,122,0.82)",
+    Sonstiges: "rgba(97,201,255,0.82)"
+  };
 
-    if (data.date && !data.month_key) data.month_key = data.date.slice(0, 7);
+  const datasets = [];
+  VACATION_BUCKETS.forEach((bucket) => {
+    const color = baseColors[bucket];
 
-    if (data.booking_type === "settlement") {
-      if (!data.counterparty || data.counterparty === "-") {
-        data.counterparty = otherUserName();
-      }
-      data.counterparty = normalizePersonName(data.counterparty);
-      data.split_enabled = "nein";
-      data.split_percent = "100";
-      data.main_category = "Verrechnung";
-      data.sub_category = "Saldoausgleich";
+    if (chartPayload.showThreeBars) {
+      datasets.push({
+        label: bucket,
+        data: chartPayload.bucketData[bucket],
+        backgroundColor: [
+          color,
+          createCanvasPattern(canvas, "dotted", color),
+          createCanvasPattern(canvas, "striped", color)
+        ],
+        borderColor: [color, color, color],
+        borderWidth: 1,
+        stack: "vacationSummary"
+      });
     } else {
-      data.counterparty = "-";
+      datasets.push({
+        label: bucket,
+        data: chartPayload.bucketData[bucket],
+        backgroundColor: color,
+        borderColor: color,
+        borderWidth: 1,
+        stack: "vacationSummary"
+      });
     }
-
-    if (data.paid_by) data.paid_by = normalizePersonName(data.paid_by);
-    if (data.travel_with) data.travel_with = normalizePersonName(data.travel_with);
-
-    if (user) {
-      data.owner_user = normalizedUser;
-      data.created_by = normalizePersonName(data.created_by || user.displayName || normalizedUser);
-      data.updated_by = normalizedUser;
-    }
-
-    return data;
-  }
-
-  function setFormValues(form, record) {
-    if (!form || !record) return;
-
-    Object.entries(record).forEach(([key, value]) => {
-      if (key === "_clientKey") return;
-
-      const field = form.elements.namedItem(key);
-      if (!field) return;
-      if (field instanceof RadioNodeList) return;
-
-      if (field.tagName === "INPUT" && field.type === "date") {
-        field.value = normalizeDateOnly(value);
-      } else if (field.tagName === "INPUT" && field.type === "month") {
-        field.value = monthFromDate(value);
-      } else {
-        field.value = value ?? "";
-      }
-    });
-  }
-
-  function setFieldDisabled(field, disabled) {
-    if (!field) return;
-    field.disabled = disabled;
-  }
-
-  function closestLabel(field) {
-    return field?.closest("label") || null;
-  }
-
-  function setLabelHidden(field, hidden) {
-    const label = closestLabel(field);
-    if (label) label.style.display = hidden ? "none" : "";
-  }
-
-  function updateTransactionFormVisibility() {
-    const isSettlementType = (els.bookingType?.value || "expense") === "settlement";
-
-    setLabelHidden(els.transactionCounterparty, !isSettlementType);
-    setLabelHidden(els.bookingMainCategory, isSettlementType);
-    setLabelHidden(els.bookingSubCategory, isSettlementType);
-    setLabelHidden(els.transactionSplitEnabled, isSettlementType);
-    setLabelHidden(els.transactionSplitPercent, isSettlementType);
-
-    setFieldDisabled(els.bookingMainCategory, isSettlementType);
-    setFieldDisabled(els.bookingSubCategory, isSettlementType);
-    setFieldDisabled(els.transactionSplitEnabled, isSettlementType);
-    setFieldDisabled(els.transactionSplitPercent, isSettlementType);
-
-    if (isSettlementType) {
-      if (els.transactionSplitEnabled) els.transactionSplitEnabled.value = "nein";
-      if (els.transactionSplitPercent) els.transactionSplitPercent.value = "100";
-      if (els.transactionCounterparty && (!els.transactionCounterparty.value || els.transactionCounterparty.value === "-")) {
-        els.transactionCounterparty.value = otherUserName();
-      }
-    } else {
-      if (els.transactionCounterparty) els.transactionCounterparty.value = "-";
-    }
-  }
-
-  function resetFormUi(type) {
-    if (type === "transaction") {
-      editState.transaction = null;
-      els.transactionForm?.reset();
-      setDefaultMonth();
-
-      const splitField = els.transactionForm?.elements.namedItem("split_percent");
-      const splitEnabledField = els.transactionForm?.elements.namedItem("split_enabled");
-      const bookingTypeField = els.transactionForm?.elements.namedItem("booking_type");
-      const counterpartyField = els.transactionForm?.elements.namedItem("counterparty");
-
-      if (splitField) splitField.value = "100";
-      if (splitEnabledField) splitEnabledField.value = "nein";
-      if (bookingTypeField) bookingTypeField.value = "expense";
-      if (counterpartyField) counterpartyField.value = "-";
-
-      if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Neue Buchung";
-      if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Buchung speichern";
-      if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "none";
-
-      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory);
-      updateTransactionFormVisibility();
-      return;
-    }
-
-    if (type === "trip") {
-      editState.trip = null;
-      els.tripForm?.reset();
-      if (els.tripFormModeLabel) els.tripFormModeLabel.textContent = "Neue Reise";
-      if (els.tripSubmitBtn) els.tripSubmitBtn.textContent = "Reise speichern";
-      if (els.tripCancelEditBtn) els.tripCancelEditBtn.style.display = "none";
-      return;
-    }
-
-    if (type === "tripExpense") {
-      editState.tripExpense = null;
-      els.tripExpenseForm?.reset();
-      setDefaultMonth();
-
-      const splitField = els.tripExpenseForm?.elements.namedItem("split_percent");
-      const splitEnabledField = els.tripExpenseForm?.elements.namedItem("split_enabled");
-      if (splitField) splitField.value = "100";
-      if (splitEnabledField) splitEnabledField.value = "nein";
-
-      if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Neue Urlaubsausgabe";
-      if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Urlaubsausgabe speichern";
-      if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "none";
-      populateTripSelect();
-      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory);
-      return;
-    }
-
-    if (type === "category") {
-      editState.category = null;
-      els.categoryForm?.reset();
-      if (els.categoryFormModeLabel) els.categoryFormModeLabel.textContent = "Neue Kategorie";
-      if (els.categorySubmitBtn) els.categorySubmitBtn.textContent = "Kategorie speichern";
-      if (els.categoryCancelEditBtn) els.categoryCancelEditBtn.style.display = "none";
-      return;
-    }
-
-    if (type === "fixedCost") {
-      editState.fixedCost = null;
-      els.fixedCostForm?.reset();
-
-      const splitField = els.fixedCostForm?.elements.namedItem("split_percent");
-      const splitEnabledField = els.fixedCostForm?.elements.namedItem("split_enabled");
-      if (splitField) splitField.value = "100";
-      if (splitEnabledField) splitEnabledField.value = "nein";
-
-      if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Neue Fixkostenposition";
-      if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Fixkosten speichern";
-      if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "none";
-      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory);
-      return;
-    }
-
-    if (type === "income") {
-      editState.income = null;
-      els.incomeForm?.reset();
-      setDefaultMonth();
-      if (els.incomeFormModeLabel) els.incomeFormModeLabel.textContent = "Neue Einnahme";
-      if (els.incomeSubmitBtn) els.incomeSubmitBtn.textContent = "Einnahme speichern";
-      if (els.incomeCancelEditBtn) els.incomeCancelEditBtn.style.display = "none";
-    }
-  }
-
-  function startEdit(type, record) {
-    if (!record) return;
-
-    if (type === "transaction") {
-      editState.transaction = record.id;
-      setFormValues(els.transactionForm, record);
-      if (els.bookingFormModeLabel) els.bookingFormModeLabel.textContent = "Buchung bearbeiten";
-      if (els.transactionSubmitBtn) els.transactionSubmitBtn.textContent = "Änderungen speichern";
-      if (els.transactionCancelEditBtn) els.transactionCancelEditBtn.style.display = "inline-flex";
-      populateCategorySelects("Haushalt", els.bookingMainCategory, els.bookingSubCategory, record.main_category, record.sub_category);
-      updateTransactionFormVisibility();
-      document.getElementById("panel-bookings")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "trip") {
-      editState.trip = record.trip_id;
-      setFormValues(els.tripForm, record);
-      if (els.tripFormModeLabel) els.tripFormModeLabel.textContent = "Reise bearbeiten";
-      if (els.tripSubmitBtn) els.tripSubmitBtn.textContent = "Änderungen speichern";
-      if (els.tripCancelEditBtn) els.tripCancelEditBtn.style.display = "inline-flex";
-      document.getElementById("panel-urlaub")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "tripExpense") {
-      editState.tripExpense = record.id;
-      setFormValues(els.tripExpenseForm, record);
-      if (els.tripExpenseFormModeLabel) els.tripExpenseFormModeLabel.textContent = "Urlaubsausgabe bearbeiten";
-      if (els.tripExpenseSubmitBtn) els.tripExpenseSubmitBtn.textContent = "Änderungen speichern";
-      if (els.tripExpenseCancelEditBtn) els.tripExpenseCancelEditBtn.style.display = "inline-flex";
-      populateTripSelect();
-      populateCategorySelects("Urlaub", els.tripMainCategory, els.tripSubCategory, record.main_category, record.sub_category);
-      document.getElementById("panel-urlaub")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "category") {
-      editState.category = record.id;
-      setFormValues(els.categoryForm, record);
-      if (els.categoryFormModeLabel) els.categoryFormModeLabel.textContent = "Kategorie bearbeiten";
-      if (els.categorySubmitBtn) els.categorySubmitBtn.textContent = "Änderungen speichern";
-      if (els.categoryCancelEditBtn) els.categoryCancelEditBtn.style.display = "inline-flex";
-      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "fixedCost") {
-      editState.fixedCost = record.id;
-      setFormValues(els.fixedCostForm, record);
-      if (els.fixedCostFormModeLabel) els.fixedCostFormModeLabel.textContent = "Fixkosten bearbeiten";
-      if (els.fixedCostSubmitBtn) els.fixedCostSubmitBtn.textContent = "Änderungen speichern";
-      if (els.fixedCostCancelEditBtn) els.fixedCostCancelEditBtn.style.display = "inline-flex";
-      populateCategorySelects("Haushalt", els.fixedMainCategory, els.fixedSubCategory, record.main_category, record.sub_category);
-      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    if (type === "income") {
-      editState.income = record.id;
-      setFormValues(els.incomeForm, record);
-      if (els.incomeFormModeLabel) els.incomeFormModeLabel.textContent = "Einnahme bearbeiten";
-      if (els.incomeSubmitBtn) els.incomeSubmitBtn.textContent = "Änderungen speichern";
-      if (els.incomeCancelEditBtn) els.incomeCancelEditBtn.style.display = "inline-flex";
-      document.getElementById("panel-zentrale")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
-  function getRecordByTypeAndKey(type, key) {
-    if (type === "transaction") return (state.data.transactions || []).find((r) => r._clientKey === key);
-    if (type === "trip") return (state.data.trips || []).find((r) => r._clientKey === key);
-    if (type === "tripExpense") return (state.data.tripExpenses || []).find((r) => r._clientKey === key);
-    if (type === "category") return (state.data.categories || []).find((r) => r._clientKey === key);
-    if (type === "fixedCost") return (state.data.fixedCosts || []).find((r) => r._clientKey === key);
-    if (type === "income") return (state.data.income || []).find((r) => r._clientKey === key);
-    return null;
-  }
-
-  async function deleteRecord(type, backendId) {
-    const confirmed = window.confirm("Diesen Eintrag wirklich löschen?");
-    if (!confirmed) return;
-
-    const actionMap = {
-      transaction: "deleteTransaction",
-      trip: "deleteTrip",
-      tripExpense: "deleteTripExpense",
-      category: "deleteCategory",
-      fixedCost: "deleteFixedCost",
-      income: "deleteIncome"
-    };
-
-    const payload = {};
-    if (type === "trip") payload.trip_id = backendId;
-    else payload.id = backendId;
-
-    await apiPost(actionMap[type], payload);
-    resetFormUi(type);
-    await loadAll();
-    showMessage("Eintrag gelöscht.", "success");
-  }
-
-  async function submitForm(form, addAction, updateAction, successAddText, successUpdateText, type) {
-    try {
-      clearMessage();
-
-      const data = formToObject(form);
-
-      const isEdit =
-        (type === "trip" && !!editState.trip) ||
-        (type === "transaction" && !!editState.transaction) ||
-        (type === "tripExpense" && !!editState.tripExpense) ||
-        (type === "category" && !!editState.category) ||
-        (type === "fixedCost" && !!editState.fixedCost) ||
-        (type === "income" && !!editState.income);
-
-      const action = isEdit ? updateAction : addAction;
-
-      await apiPost(action, data);
-
-      resetFormUi(type);
-      await loadAll();
-      showMessage(isEdit ? successUpdateText : successAddText, "success");
-    } catch (error) {
-      showMessage(error.message || "Speichern fehlgeschlagen.", "error");
-      console.error(error);
-    }
-  }
-
-  function bindForms() {
-    els.transactionForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.transactionForm,
-        "addTransaction",
-        "updateTransaction",
-        "Haushaltsbuchung gespeichert.",
-        "Haushaltsbuchung aktualisiert.",
-        "transaction"
-      );
-    });
-
-    els.tripForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.tripForm,
-        "addTrip",
-        "updateTrip",
-        "Reise gespeichert.",
-        "Reise aktualisiert.",
-        "trip"
-      );
-    });
-
-    els.tripExpenseForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.tripExpenseForm,
-        "addTripExpense",
-        "updateTripExpense",
-        "Urlaubsausgabe gespeichert.",
-        "Urlaubsausgabe aktualisiert.",
-        "tripExpense"
-      );
-    });
-
-    els.categoryForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.categoryForm,
-        "addCategory",
-        "updateCategory",
-        "Kategorie gespeichert.",
-        "Kategorie aktualisiert.",
-        "category"
-      );
-    });
-
-    els.fixedCostForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.fixedCostForm,
-        "addFixedCost",
-        "updateFixedCost",
-        "Fixkosten gespeichert.",
-        "Fixkosten aktualisiert.",
-        "fixedCost"
-      );
-    });
-
-    els.incomeForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submitForm(
-        els.incomeForm,
-        "addIncome",
-        "updateIncome",
-        "Einnahme gespeichert.",
-        "Einnahme aktualisiert.",
-        "income"
-      );
-    });
-
-    els.transactionCancelEditBtn?.addEventListener("click", () => resetFormUi("transaction"));
-    els.tripCancelEditBtn?.addEventListener("click", () => resetFormUi("trip"));
-    els.tripExpenseCancelEditBtn?.addEventListener("click", () => resetFormUi("tripExpense"));
-    els.categoryCancelEditBtn?.addEventListener("click", () => resetFormUi("category"));
-    els.fixedCostCancelEditBtn?.addEventListener("click", () => resetFormUi("fixedCost"));
-    els.incomeCancelEditBtn?.addEventListener("click", () => resetFormUi("income"));
-
-    els.bookingType?.addEventListener("change", updateTransactionFormVisibility);
-  }
-
-  function bindTableActions() {
-    document.addEventListener("click", async (event) => {
-      const editBtn = event.target.closest(".js-edit");
-      if (editBtn) {
-        const type = editBtn.dataset.type;
-        const key = editBtn.dataset.key;
-        const record = getRecordByTypeAndKey(type, key);
-        startEdit(type, record);
-        return;
-      }
-
-      const deleteBtn = event.target.closest(".js-delete");
-      if (deleteBtn) {
-        const type = deleteBtn.dataset.type;
-        const backendId = deleteBtn.dataset.id;
-        try {
-          await deleteRecord(type, backendId);
-        } catch (error) {
-          showMessage(error.message || "Löschen fehlgeschlagen.", "error");
-          console.error(error);
-        }
-      }
-    });
-  }
-
-  function bindTabs() {
-    els.tabs?.addEventListener("click", (event) => {
-      const btn = event.target.closest(".nav-btn");
-      if (!btn) return;
-
-      document.querySelectorAll(".nav-btn").forEach((el) => el.classList.remove("active"));
-      btn.classList.add("active");
-
-      document.querySelectorAll(".panel").forEach((el) => el.classList.remove("active"));
-      document.getElementById(`panel-${btn.dataset.tab}`)?.classList.add("active");
-    });
-  }
-
-  function bindFilters() {
-    [
-      els.filterStartMonth,
-      els.filterAnalysisMonth,
-      els.filterMainCategory,
-      els.rangeMonths,
-      els.chartMode,
-      els.compositionMode,
-      els.housingDisplayMode,
-      els.vacationYearSelect,
-      els.vacationAnalysisSelect
-    ].filter(Boolean).forEach((element) => {
-      element.addEventListener("change", renderAll);
-    });
-
-    els.reloadBtn?.addEventListener("click", loadAll);
-  }
-
-  function setupUiOnce() {
-    if (state.initializedUi) return;
-
-    setDefaultMonth();
-    bindTabs();
-    bindForms();
-    bindFilters();
-    bindTableActions();
-    wireCategorySelects();
-    resetFormUi("transaction");
-
-    state.initializedUi = true;
-  }
-
-  async function onUserLoggedIn() {
-    setupUiOnce();
-    await loadAll();
-  }
-
-  async function init() {
-    if (typeof initAuth === "function") {
-      await initAuth();
-    }
-
-    const user = currentUser();
-    if (!user) return;
-
-    setupUiOnce();
-    await loadAll();
-  }
-
-  window.onUserLoggedIn = onUserLoggedIn;
-  window.loadAll = loadAll;
-
-  document.addEventListener("DOMContentLoaded", init);
-})();
+  });
+
+  ensureChart("vacationCompositionChart", "vacationCompositionChart", {
+    type: "bar",
+    data: {
+      labels: chartPayload.labels,
+      datasets
+    },
+    options: chartOptions(true)
+  });
+}
+
+function renderTripExpensesTable() {
+  if (!els.tripExpensesTableBody) return;
+  const tripMap = new Map((state.data.trips || []).map((row) => [row.trip_id, row.title]));
+  const rows = getTripExpensesForTable();
+
+  els.tripExpensesTableBody.innerHTML = rows.length
+    ? rows.map((row) => `
+        <tr>
+          <td>${escapeHtml(tripMap.get(row.trip_id) || row.trip_id)}</td>
+          <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
+          <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
+          <td>${escapeHtml(currency(getTripExpenseVisibleAmountForTable(row)))}</td>
+          <td>${escapeHtml(row.paid_by)}</td>
+          <td>${actionButtons("tripExpense", row)}</td>
+        </tr>
+      `).join("")
+    : '<tr><td colspan="6" class="table-empty">Noch keine Urlaubsausgaben vorhanden</td></tr>';
+}
+
+function renderDashboard() {
+  const month = selectedAnalysisMonth();
+  const txRows = filteredTransactions();
+  const tripRows = filteredTripExpenses();
+  const metrics = renderKpis(month, txRows, tripRows);
+
+  renderCharts(month, txRows, tripRows, metrics);
+  renderCategoryTable(txRows.concat(tripRows));
+  renderMonthOverviewTable(metrics);
+  renderRangeOverviewTable();
+  renderCategoryCompareTable(month, txRows, tripRows);
+}
