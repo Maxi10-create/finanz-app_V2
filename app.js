@@ -5,6 +5,8 @@
   const PERSON_A = "Maximilian Hofer";
   const PERSON_B = "Jana March";
 
+  const VACATION_BUCKETS = ["Transport", "Unterkunft", "Essen", "Aktivitäten", "Sonstiges"];
+
   const state = {
     activeApiBaseUrl: null,
     charts: {},
@@ -346,47 +348,44 @@
     return (state.data.trips || []).find((row) => row.trip_id === tripId) || null;
   }
 
+  function resolveTripPeople(trip) {
+    const owner = normalizePersonName(trip?.owner_user || "");
+    const travelWith = normalizePersonName(trip?.travel_with || "");
+
+    return { owner, travelWith };
+  }
+
   function isSharedTrip(trip) {
     if (!trip) return false;
 
-    const owner = normalizePersonName(trip.owner_user || "");
-    const travelWith = String(trip.travel_with || "").trim();
-    const travelWithNorm = normalizePersonName(travelWith);
-
+    const { owner, travelWith } = resolveTripPeople(trip);
     if (!travelWith) return false;
 
-    if (travelWithNorm === PERSON_A || travelWithNorm === PERSON_B) {
-      return owner !== travelWithNorm;
+    if ((owner === PERSON_A && travelWith === PERSON_B) || (owner === PERSON_B && travelWith === PERSON_A)) {
+      return true;
     }
 
-    const lower = travelWith.toLowerCase();
-    if (lower.includes("gemeinsam")) return true;
-    if (lower.includes(PERSON_A.toLowerCase()) && lower.includes(PERSON_B.toLowerCase())) return true;
+    const raw = String(trip.travel_with || "").toLowerCase();
+    if (raw.includes("gemeinsam")) return true;
+    if (raw.includes(PERSON_A.toLowerCase()) && raw.includes(PERSON_B.toLowerCase())) return true;
 
     return false;
+  }
+
+  function getSharedTripParticipants(trip) {
+    if (!isSharedTrip(trip)) return [];
+    return [PERSON_A, PERSON_B];
   }
 
   function isVisibleTrip(trip) {
     if (!trip) return false;
     if (String(trip.is_deleted || "").toLowerCase() === "ja") return false;
 
-    const me = currentUserName();
-    const owner = normalizePersonName(trip.owner_user || "");
-
-    if (owner === me) return true;
-    return isSharedTrip(trip);
+    if (isSharedTrip(trip)) return true;
+    return normalizePersonName(trip.owner_user || "") === currentUserName();
   }
 
-  function getPaidOwnerForNonSplit(row) {
-    const paidBy = normalizePersonName(row.paid_by || "");
-    const owner = normalizePersonName(row.owner_user || "");
-
-    if (paidBy === PERSON_A || paidBy === PERSON_B) return paidBy;
-    if (owner === PERSON_A || owner === PERSON_B) return owner;
-    return owner || paidBy || currentUserName();
-  }
-
-  function getBasePersonShares(row, baseAmount) {
+  function getTransactionBaseShares(row, baseAmount) {
     const amount = Number(baseAmount == null ? row.amount : baseAmount) || 0;
     const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
     const splitPercent = Number(row.split_percent || 100);
@@ -415,22 +414,69 @@
       return shares;
     }
 
-    const assigned = getPaidOwnerForNonSplit(row);
-    if (assigned === PERSON_A) shares[PERSON_A] = amount;
-    else if (assigned === PERSON_B) shares[PERSON_B] = amount;
-    else shares[currentUserName()] = amount;
-
+    if (owner === PERSON_A || owner === PERSON_B) {
+      shares[owner] = amount;
+    } else {
+      shares[currentUserName()] = amount;
+    }
     return shares;
   }
 
   function getUserShareFromAmount(row, baseAmount) {
     if (isSettlement(row)) return 0;
-    const shares = getBasePersonShares(row, baseAmount);
+    const shares = getTransactionBaseShares(row, baseAmount);
     return shares[currentUserName()] || 0;
   }
 
   function getCurrentUserAmount(row) {
     return getUserShareFromAmount(row, row.amount);
+  }
+
+  function resolveVacationPayer(row) {
+    const paidBy = normalizePersonName(row.paid_by || "");
+    if (paidBy === PERSON_A || paidBy === PERSON_B) return paidBy;
+
+    const owner = normalizePersonName(row.owner_user || "");
+    if (owner === PERSON_A || owner === PERSON_B) return owner;
+
+    return currentUserName();
+  }
+
+  function getVacationExpenseShares(row, trip) {
+    const amount = Number(row.amount || 0);
+    const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
+    const splitPercent = Number(row.split_percent || 100);
+    const payer = resolveVacationPayer(row);
+
+    const shares = {
+      total: amount,
+      [PERSON_A]: 0,
+      [PERSON_B]: 0
+    };
+
+    if (isSharedTrip(trip)) {
+      const other = payer === PERSON_A ? PERSON_B : PERSON_A;
+
+      if (splitEnabled) {
+        const payerShare = amount * (splitPercent / 100);
+        const otherShare = amount - payerShare;
+        shares[payer] = payerShare;
+        shares[other] = otherShare;
+      } else {
+        shares[payer] = amount;
+      }
+
+      return shares;
+    }
+
+    shares[payer] = amount;
+    return shares;
+  }
+
+  function getVacationCurrentUserAmount(row) {
+    const trip = getTripById(row.trip_id);
+    const shares = getVacationExpenseShares(row, trip);
+    return shares[currentUserName()] || 0;
   }
 
   function isRelevantTripExpenseForUser(row) {
@@ -440,7 +486,7 @@
     const trip = getTripById(row.trip_id);
     if (trip && isSharedTrip(trip)) return true;
 
-    return getCurrentUserAmount(row) > 0;
+    return getVacationCurrentUserAmount(row) > 0;
   }
 
   function isVisibleTripExpense(row) {
@@ -448,8 +494,9 @@
     if (String(row.is_deleted || "").toLowerCase() === "ja") return false;
 
     const trip = getTripById(row.trip_id);
+
     if (trip && isSharedTrip(trip)) return true;
-    if (trip && isVisibleTrip(trip)) return true;
+    if (trip && isVisibleTrip(trip) && getVacationCurrentUserAmount(row) > 0) return true;
 
     return isRelevantTripExpenseForUser(row);
   }
@@ -491,6 +538,13 @@
     if (!splitEnabled) return false;
 
     return String(row.visible_to_other || "").toLowerCase() === "ja";
+  }
+
+  function getRowCurrentUserAmount(row) {
+    if (row && Object.prototype.hasOwnProperty.call(row, "trip_id")) {
+      return getVacationCurrentUserAmount(row);
+    }
+    return getCurrentUserAmount(row);
   }
 
   function filteredTransactionsForMonth(month) {
@@ -576,7 +630,7 @@
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
       if (!splitEnabled) return;
 
-      const shares = getBasePersonShares(row, row.amount);
+      const shares = getTransactionBaseShares(row, row.amount);
       const myShare = shares[me] || 0;
       const otherShare = shares[otherUserName()] || 0;
       const paidBy = normalizePersonName(row.paid_by || "");
@@ -589,12 +643,13 @@
       const splitEnabled = String(row.split_enabled || "nein").toLowerCase() === "ja";
       if (!splitEnabled) return;
 
-      const shares = getBasePersonShares(row, row.amount);
+      const trip = getTripById(row.trip_id);
+      const shares = getVacationExpenseShares(row, trip);
       const myShare = shares[me] || 0;
       const otherShare = shares[otherUserName()] || 0;
-      const paidBy = normalizePersonName(row.paid_by || "");
+      const payer = resolveVacationPayer(row);
 
-      if (paidBy === me) balance += otherShare;
+      if (payer === me) balance += otherShare;
       else balance -= myShare;
     });
 
@@ -610,7 +665,7 @@
     const map = new Map();
     rows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
-      const value = getCurrentUserAmount(row);
+      const value = getRowCurrentUserAmount(row);
       map.set(key, (map.get(key) || 0) + value);
     });
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
@@ -622,7 +677,7 @@
       .filter((row) => !selectedMainCategory || row.main_category === selectedMainCategory)
       .forEach((row) => {
         const key = row.sub_category || "Ohne Unterkategorie";
-        const value = getCurrentUserAmount(row);
+        const value = getRowCurrentUserAmount(row);
         map.set(key, (map.get(key) || 0) + value);
       });
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
@@ -759,6 +814,12 @@
       .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")));
   }
 
+  function getTripExpenseVisibleAmountForTable(row) {
+    const trip = getTripById(row.trip_id);
+    if (trip && isSharedTrip(trip)) return Number(row.amount || 0);
+    return getVacationCurrentUserAmount(row);
+  }
+
   function getTripExpensesForTable() {
     return (state.data.tripExpenses || [])
       .filter(isVisibleTripExpense)
@@ -802,7 +863,7 @@
   function renderKpis(month, txRows, tripRows) {
     const income = monthlyIncome(month);
     const txTotal = txRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
-    const tripTotal = tripRows.reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
+    const tripTotal = tripRows.reduce((sum, row) => sum + getVacationCurrentUserAmount(row), 0);
     const fixedCosts = fixedCostsMonthlyTotal(month);
     const totalExpenses = txTotal + tripTotal + fixedCosts;
     const variableCosts = txTotal + tripTotal;
@@ -989,7 +1050,7 @@
 
     const variableSeriesRaw = months.map((m) => {
       const tx = filteredTransactionsForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
-      const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
+      const trip = filteredTripExpensesForMonth(m).reduce((sum, row) => sum + getVacationCurrentUserAmount(row), 0);
       return tx + trip;
     });
 
@@ -1047,7 +1108,7 @@
     const variableAgg = new Map();
     variableRows.forEach((row) => {
       const key = row.main_category || "Ohne Kategorie";
-      variableAgg.set(key, (variableAgg.get(key) || 0) + getCurrentUserAmount(row));
+      variableAgg.set(key, (variableAgg.get(key) || 0) + getRowCurrentUserAmount(row));
     });
 
     if (els.variableCompositionLabel) els.variableCompositionLabel.textContent = "Analysemonat";
@@ -1067,8 +1128,8 @@
 
     const selectedMainCategory = els.filterMainCategory?.value || "";
     const breakdownAggregate = selectedMainCategory
-      ? aggregateSubcategories(txRows.concat(tripRows), selectedMainCategory)
-      : aggregateCategories(txRows.concat(tripRows));
+      ? aggregateSubcategories(variableRows, selectedMainCategory)
+      : aggregateCategories(variableRows);
 
     ensureChart("categoryBreakdownChart", "categoryBreakdownChart", {
       type: "bar",
@@ -1135,7 +1196,7 @@
     const months = analysisRangeMonths();
     const income = months.reduce((sum, m) => sum + monthlyIncome(m), 0);
     const txTotal = months.reduce((sum, m) => sum + filteredTransactionsForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
-    const tripTotal = months.reduce((sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getCurrentUserAmount(row), 0), 0);
+    const tripTotal = months.reduce((sum, m) => sum + filteredTripExpensesForMonth(m).reduce((s, row) => s + getVacationCurrentUserAmount(row), 0), 0);
     const fixedCosts = months.reduce((sum, m) => sum + fixedCostsMonthlyTotal(m), 0);
     const variableCosts = txTotal + tripTotal;
     const totalExpenses = variableCosts + fixedCosts;
@@ -1165,8 +1226,9 @@
   function renderCategoryCompareTable(month, txRows, tripRows) {
     if (!els.categoryCompareTableBody) return;
 
+    const monthRows = txRows.concat(tripRows);
     const monthAgg = new Map();
-    aggregateCategories(txRows.concat(tripRows)).forEach(([key, value]) => monthAgg.set(key, value));
+    aggregateCategories(monthRows).forEach(([key, value]) => monthAgg.set(key, value));
 
     const rangeAgg = new Map();
     analysisRangeMonths().forEach((m) => {
@@ -1213,35 +1275,11 @@
     return "Sonstiges";
   }
 
-  function getVacationExpenseDisplayShares(row, trip) {
-    const shared = !!(trip && isSharedTrip(trip));
-
-    if (shared) {
-      const shares = getBasePersonShares(row, row.amount);
-      return {
-        shared: true,
-        total: shares.total,
-        max: shares[PERSON_A] || 0,
-        jana: shares[PERSON_B] || 0
-      };
-    }
-
-    const own = getCurrentUserAmount(row);
-    return {
-      shared: false,
-      total: own,
-      max: currentUserName() === PERSON_A ? own : 0,
-      jana: currentUserName() === PERSON_B ? own : 0
-    };
-  }
-
   function createVacationCategoryAccumulator() {
-    return {
-      Transport: { total: 0, max: 0, jana: 0 },
-      Unterkunft: { total: 0, max: 0, jana: 0 },
-      Essen: { total: 0, max: 0, jana: 0 },
-      Aktivitäten: { total: 0, max: 0, jana: 0 }
-    };
+    return VACATION_BUCKETS.reduce((acc, bucket) => {
+      acc[bucket] = { total: 0, max: 0, jana: 0 };
+      return acc;
+    }, {});
   }
 
   function computeVacationOverviewData() {
@@ -1264,14 +1302,12 @@
 
     relevantExpenses.forEach((row) => {
       const bucket = getVacationCategoryBucket(row);
-      if (!categories[bucket]) return;
-
       const trip = getTripById(row.trip_id);
-      const shares = getVacationExpenseDisplayShares(row, trip);
+      const shares = getVacationExpenseShares(row, trip);
 
       categories[bucket].total += shares.total;
-      categories[bucket].max += shares.max;
-      categories[bucket].jana += shares.jana;
+      categories[bucket].max += shares[PERSON_A] || 0;
+      categories[bucket].jana += shares[PERSON_B] || 0;
     });
 
     const totals = { total: 0, max: 0, jana: 0 };
@@ -1294,58 +1330,28 @@
     };
   }
 
-  function computeVacationLast5TripsData() {
-    const trips = (state.data.trips || [])
-      .filter(isVisibleTrip)
-      .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")))
-      .slice(0, 5);
+  function computeVacationChartData() {
+    const data = computeVacationOverviewData();
+    const labels = data.hasSharedTrip ? ["Gesamt", PERSON_A, PERSON_B] : [currentUserName()];
 
-    const expenses = getVisibleVacationExpenses();
-    const labels = [];
+    const bucketData = {};
+    VACATION_BUCKETS.forEach((bucket) => {
+      if (data.hasSharedTrip) {
+        bucketData[bucket] = [
+          data.categories[bucket].total,
+          data.categories[bucket].max,
+          data.categories[bucket].jana
+        ];
+      } else {
+        const ownValue = currentUserName() === PERSON_A
+          ? data.categories[bucket].max
+          : data.categories[bucket].jana;
 
-    const createCategoryMap = () => ({
-      total: [],
-      max: [],
-      jana: []
+        bucketData[bucket] = [ownValue];
+      }
     });
 
-    const categories = {
-      Transport: createCategoryMap(),
-      Unterkunft: createCategoryMap(),
-      Essen: createCategoryMap(),
-      Aktivitäten: createCategoryMap()
-    };
-
-    trips.forEach((trip) => {
-      labels.push(trip.title || trip.destination || trip.trip_id);
-
-      const local = {
-        Transport: { total: 0, max: 0, jana: 0 },
-        Unterkunft: { total: 0, max: 0, jana: 0 },
-        Essen: { total: 0, max: 0, jana: 0 },
-        Aktivitäten: { total: 0, max: 0, jana: 0 }
-      };
-
-      expenses
-        .filter((row) => row.trip_id === trip.trip_id)
-        .forEach((row) => {
-          const bucket = getVacationCategoryBucket(row);
-          if (!local[bucket]) return;
-
-          const shares = getVacationExpenseDisplayShares(row, trip);
-          local[bucket].total += shares.total;
-          local[bucket].max += shares.max;
-          local[bucket].jana += shares.jana;
-        });
-
-      Object.keys(local).forEach((bucket) => {
-        categories[bucket].total.push(local[bucket].total);
-        categories[bucket].max.push(local[bucket].max);
-        categories[bucket].jana.push(local[bucket].jana);
-      });
-    });
-
-    return { labels, categories };
+    return { labels, bucketData, data };
   }
 
   function createCanvasPattern(canvas, type, color) {
@@ -1365,22 +1371,20 @@
     pctx.lineWidth = 2;
 
     if (type === "dotted") {
-      pctx.beginPath();
-      pctx.arc(4, 4, 2, 0, Math.PI * 2);
-      pctx.fill();
-      pctx.beginPath();
-      pctx.arc(12, 12, 2, 0, Math.PI * 2);
-      pctx.fill();
+      for (let x = 4; x < 16; x += 8) {
+        for (let y = 4; y < 16; y += 8) {
+          pctx.beginPath();
+          pctx.arc(x, y, 1.6, 0, Math.PI * 2);
+          pctx.fill();
+        }
+      }
     } else if (type === "striped") {
-      pctx.beginPath();
-      pctx.moveTo(-2, 14);
-      pctx.lineTo(14, -2);
-      pctx.stroke();
-
-      pctx.beginPath();
-      pctx.moveTo(4, 18);
-      pctx.lineTo(18, 4);
-      pctx.stroke();
+      for (let i = -16; i < 16; i += 6) {
+        pctx.beginPath();
+        pctx.moveTo(i, 16);
+        pctx.lineTo(i + 16, 0);
+        pctx.stroke();
+      }
     }
 
     return ctx.createPattern(patternCanvas, "repeat") || color;
@@ -1400,7 +1404,9 @@
     if (els.vacationKpiTableBody) {
       const totalBase = data.totals.total || 1;
 
-      const rows = Object.entries(data.categories).map(([name, values]) => {
+      const rows = VACATION_BUCKETS.map((name) => {
+        const values = data.categories[name];
+
         if (data.hasSharedTrip) {
           return `
             <tr>
@@ -1432,50 +1438,50 @@
       els.vacationKpiTableBody.innerHTML = rows || '<tr><td colspan="3" class="table-empty">Keine Daten vorhanden</td></tr>';
     }
 
-    const chartData = computeVacationLast5TripsData();
+    const chartPayload = computeVacationChartData();
     const canvas = document.getElementById("vacationCompositionChart");
 
     const baseColors = {
       Transport: "rgba(79,124,255,0.82)",
       Unterkunft: "rgba(255,190,61,0.82)",
       Essen: "rgba(19,194,150,0.82)",
-      Aktivitäten: "rgba(255,109,122,0.82)"
+      Aktivitäten: "rgba(255,109,122,0.82)",
+      Sonstiges: "rgba(97,201,255,0.82)"
     };
 
     const datasets = [];
-    ["Transport", "Unterkunft", "Essen", "Aktivitäten"].forEach((category) => {
-      const color = baseColors[category];
+    VACATION_BUCKETS.forEach((bucket) => {
+      const color = baseColors[bucket];
 
-      datasets.push({
-        label: `${category} Gesamt`,
-        data: chartData.categories[category].total,
-        stack: `${category}_group`,
-        backgroundColor: color
-      });
-
-      datasets.push({
-        label: `${category} ${PERSON_A}`,
-        data: chartData.categories[category].max,
-        stack: `${category}_group`,
-        backgroundColor: createCanvasPattern(canvas, "dotted", color),
-        borderColor: color,
-        borderWidth: 1
-      });
-
-      datasets.push({
-        label: `${category} ${PERSON_B}`,
-        data: chartData.categories[category].jana,
-        stack: `${category}_group`,
-        backgroundColor: createCanvasPattern(canvas, "striped", color),
-        borderColor: color,
-        borderWidth: 1
-      });
+      if (chartPayload.data.hasSharedTrip) {
+        datasets.push({
+          label: bucket,
+          data: chartPayload.bucketData[bucket],
+          backgroundColor: [
+            color,
+            createCanvasPattern(canvas, "dotted", color),
+            createCanvasPattern(canvas, "striped", color)
+          ],
+          borderColor: [color, color, color],
+          borderWidth: 1,
+          stack: "vacationSummary"
+        });
+      } else {
+        datasets.push({
+          label: bucket,
+          data: chartPayload.bucketData[bucket],
+          backgroundColor: color,
+          borderColor: color,
+          borderWidth: 1,
+          stack: "vacationSummary"
+        });
+      }
     });
 
     ensureChart("vacationCompositionChart", "vacationCompositionChart", {
       type: "bar",
       data: {
-        labels: chartData.labels,
+        labels: chartPayload.labels,
         datasets
       },
       options: chartOptions(true)
@@ -1698,7 +1704,7 @@
             <td>${escapeHtml(tripMap.get(row.trip_id) || row.trip_id)}</td>
             <td>${escapeHtml(normalizeDateOnly(row.date))}</td>
             <td>${escapeHtml(`${row.main_category} / ${row.sub_category}`)}</td>
-            <td>${escapeHtml(currency(getCurrentUserAmount(row)))}</td>
+            <td>${escapeHtml(currency(getTripExpenseVisibleAmountForTable(row)))}</td>
             <td>${escapeHtml(row.paid_by)}</td>
             <td>${actionButtons("tripExpense", row)}</td>
           </tr>
