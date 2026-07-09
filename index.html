@@ -282,8 +282,8 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h2>Urlaubsanalyse</h2>
-              <p>Kennzahlen und Zusammensetzung nach Jahr und Urlaub</p>
+              <h2 id="vacationSectionTitle">Urlaubsanalyse</h2>
+              <p id="vacationSectionSubtitle">Kennzahlen und Kostenaufteilung nach Jahr und Urlaub</p>
             </div>
           </div>
 
@@ -304,22 +304,22 @@
 
         <div class="hero-grid">
           <div class="hero-card">
-            <div class="hero-label">Gesamtkosten Urlaub</div>
+            <div class="hero-label" id="vacationTotalCostLabel">Gesamtkosten Urlaub</div>
             <div class="hero-value" id="vacationTotalCost">0,00 €</div>
-            <div class="hero-sub">Gewähltes Jahr / Urlaub</div>
+            <div class="hero-sub" id="vacationTotalCostSub">Gewähltes Jahr / Urlaub</div>
           </div>
           <div class="hero-card">
-            <div class="hero-label">Relevante Urlaube</div>
+            <div class="hero-label" id="vacationTripCountLabel">Relevante Urlaube</div>
             <div class="hero-value" id="vacationTripCount">0</div>
-            <div class="hero-sub">In aktueller Auswahl</div>
+            <div class="hero-sub" id="vacationTripCountSub">In aktueller Auswahl</div>
           </div>
         </div>
 
         <section class="card">
           <div class="card-header">
             <div>
-              <h2>Urlaubsanteile</h2>
-              <p>Transport, Unterkunft, Essen, Aktivitäten</p>
+              <h2 id="vacationKpiTitle">Urlaubsanteile</h2>
+              <p id="vacationKpiSubtitle">Transport, Unterkunft, Essen, Aktivitäten</p>
             </div>
           </div>
           <table class="data-table" id="vacationKpiTable">
@@ -333,8 +333,8 @@
         <section class="card">
           <div class="card-header">
             <div>
-              <h2>Zusammensetzung der letzten 5 Urlaube</h2>
-              <p>Transport, Unterkunft, Essen und Aktivitäten in €</p>
+              <h2 id="vacationChartTitle">Kategorien der aktuellen Auswahl</h2>
+              <p id="vacationChartSubtitle">Gesamt sowie pro Person in €</p>
             </div>
           </div>
           <canvas id="vacationCompositionChart"></canvas>
@@ -412,7 +412,7 @@
                     <option value="ja">ja</option>
                   </select>
                 </label>
-                <label>Split für Eigentümer
+                <label>Split für Zahler
                   <select name="split_percent">
                     <option value="100" selected>100 %</option>
                     <option value="90">90 %</option>
@@ -462,7 +462,7 @@
               </div>
               <table class="data-table" id="tripExpensesTable">
                 <thead>
-                  <tr><th>Reise</th><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Aktion</th></tr>
+                  <tr><th>Reise</th><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Bezahlt von</th><th>Aktion</th></tr>
                 </thead>
                 <tbody></tbody>
               </table>
