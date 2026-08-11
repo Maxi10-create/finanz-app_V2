@@ -775,6 +775,296 @@
           ></div>
         </section>
 
+        <!-- =====================================================
+             EINKAUFSLISTE
+        ====================================================== -->
+
+        <section
+          class="card"
+          id="shoppingListCard"
+        >
+          <div class="card-header shopping-card-header">
+            <div>
+              <h2>Einkaufsliste</h2>
+              <p>
+                Gemeinsame Einkaufsliste für Maximilian Hofer und Jana March
+              </p>
+            </div>
+
+            <div class="shopping-header-actions">
+
+              <button
+                type="button"
+                class="btn btn-ghost"
+                id="clearCompletedShoppingBtn"
+              >
+                Erledigte löschen
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-danger"
+                id="clearShoppingListBtn"
+              >
+                Gesamte Liste leeren
+              </button>
+
+            </div>
+          </div>
+
+          <!-- ===================================================
+               ARTIKEL HINZUFÜGEN / BEARBEITEN
+          ==================================================== -->
+
+          <form
+            id="shoppingItemForm"
+            class="shopping-entry-form"
+          >
+            <input
+              type="hidden"
+              name="id"
+            />
+
+            <label class="shopping-field shopping-item-field">
+              Artikel
+              <input
+                type="text"
+                name="item"
+                placeholder="z. B. Milch"
+                autocomplete="off"
+                required
+              />
+            </label>
+
+            <label class="shopping-field shopping-pieces-field">
+              Stück
+              <input
+                type="number"
+                name="pieces"
+                min="0"
+                step="1"
+                placeholder="2"
+              />
+            </label>
+
+            <label class="shopping-field shopping-quantity-field">
+              Menge
+              <input
+                type="text"
+                name="quantity"
+                placeholder="z. B. 1 l"
+                autocomplete="off"
+              />
+            </label>
+
+            <label class="shopping-field shopping-category-field">
+              Kategorie
+              <select
+                name="category"
+                id="shoppingCategory"
+              >
+                <option value="Obst & Gemüse">
+                  Obst & Gemüse
+                </option>
+
+                <option value="Backwaren">
+                  Backwaren
+                </option>
+
+                <option value="Milchprodukte">
+                  Milchprodukte
+                </option>
+
+                <option value="Fleisch & Fisch">
+                  Fleisch & Fisch
+                </option>
+
+                <option value="Getränke">
+                  Getränke
+                </option>
+
+                <option value="Vorräte">
+                  Vorräte
+                </option>
+
+                <option value="Tiefkühl">
+                  Tiefkühl
+                </option>
+
+                <option value="Drogerie">
+                  Drogerie
+                </option>
+
+                <option value="Haushalt">
+                  Haushalt
+                </option>
+
+                <option
+                  value="Sonstiges"
+                  selected
+                >
+                  Sonstiges
+                </option>
+              </select>
+            </label>
+
+            <label class="shopping-field shopping-supermarket-field">
+              Supermarkt
+              <select
+                name="supermarket"
+                id="shoppingSupermarket"
+              >
+                <option
+                  value="egal"
+                  selected
+                >
+                  egal
+                </option>
+
+                <option value="MPREIS">
+                  MPREIS
+                </option>
+
+                <option value="Spar">
+                  Spar
+                </option>
+
+                <option value="Hofer">
+                  Hofer
+                </option>
+
+                <option value="Lidl">
+                  Lidl
+                </option>
+
+                <option value="Eurospin">
+                  Eurospin
+                </option>
+
+                <option value="andere">
+                  andere
+                </option>
+              </select>
+            </label>
+
+            <div class="shopping-submit-wrap">
+
+              <button
+                type="submit"
+                class="btn btn-primary"
+                id="shoppingSubmitBtn"
+              >
+                + Hinzufügen
+              </button>
+
+              <button
+                type="button"
+                class="btn btn-ghost"
+                id="shoppingCancelEditBtn"
+                style="display:none;"
+              >
+                Bearbeitung abbrechen
+              </button>
+
+            </div>
+          </form>
+
+          <!-- ===================================================
+               STATUS UND FILTER
+          ==================================================== -->
+
+          <div class="shopping-toolbar">
+
+            <div class="shopping-stats">
+              <span id="shoppingStats">
+                0 offen · 0 erledigt
+              </span>
+            </div>
+
+            <div class="shopping-filters">
+
+              <label>
+                Status
+                <select id="shoppingStatusFilter">
+                  <option
+                    value="all"
+                    selected
+                  >
+                    Alle
+                  </option>
+
+                  <option value="open">
+                    Offen
+                  </option>
+
+                  <option value="completed">
+                    Erledigt
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                Supermarkt
+                <select id="shoppingSupermarketFilter">
+                  <option
+                    value=""
+                    selected
+                  >
+                    Alle
+                  </option>
+
+                  <option value="egal">
+                    egal
+                  </option>
+
+                  <option value="MPREIS">
+                    MPREIS
+                  </option>
+
+                  <option value="Spar">
+                    Spar
+                  </option>
+
+                  <option value="Hofer">
+                    Hofer
+                  </option>
+
+                  <option value="Lidl">
+                    Lidl
+                  </option>
+
+                  <option value="Eurospin">
+                    Eurospin
+                  </option>
+
+                  <option value="andere">
+                    andere
+                  </option>
+                </select>
+              </label>
+
+            </div>
+          </div>
+
+          <!-- ===================================================
+               GRUPPIERTE LISTE
+          ==================================================== -->
+
+          <div
+            id="shoppingListGroups"
+            class="shopping-list-groups"
+          >
+            <div class="shopping-empty-state">
+              Noch keine Artikel auf der Einkaufsliste.
+            </div>
+          </div>
+
+        </section>
+
+        <!-- =====================================================
+             AUFGABENÜBERSICHT
+        ====================================================== -->
+
         <section class="card">
           <div class="card-header">
             <div>
