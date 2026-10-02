@@ -110,9 +110,10 @@ const WEEKDAY_ENUMS = {
 function doGet(e) {
   try {
     const action = String(
-      (e && e.parameter && e.parameter.action) || 'getAll'
+      (e && e.parameter && e.parameter.action) || 'ping'
     ).toLowerCase();
 
+    // Only two harmless, public actions. Everything with data needs a login (POST).
     if (action === 'ping') {
       return jsonResponse({
         success: true,
@@ -122,18 +123,14 @@ function doGet(e) {
       });
     }
 
-    if (action === 'getall') {
-      return jsonResponse({
-        success: true,
-        version: API_VERSION,
-        data: getAllData_()
-      });
+    if (action === 'users') {
+      return jsonResponse({ success: true, version: API_VERSION, users: publicUsers_() });
     }
 
     return jsonResponse({
       success: false,
       version: API_VERSION,
-      error: 'Unknown action: ' + action
+      error: 'unauthorized'
     });
 
   } catch (err) {
@@ -149,6 +146,25 @@ function doPost(e) {
 
     const action = String(body.action || '').toLowerCase();
     const payload = body.payload || {};
+
+    // login/logout need no session; every other action does.
+    if (action === 'login') {
+      const session = loginUser_(body.user_key, body.password);
+      return jsonResponse({ success: true, version: API_VERSION, token: session.token, user: session.user });
+    }
+    if (action === 'logout') {
+      logoutUser_(body.token);
+      return jsonResponse({ success: true, version: API_VERSION });
+    }
+
+    const auth = authenticate_(body);
+    // The PersonalAI backend token may only read.
+    if (auth.kind === 'service' && action !== 'getall') {
+      throw new Error('unauthorized');
+    }
+    if (action === 'getall') {
+      return jsonResponse({ success: true, version: API_VERSION, data: getAllData_() });
+    }
 
     return withScriptLock_(function () {
       let result;

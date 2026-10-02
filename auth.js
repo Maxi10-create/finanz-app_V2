@@ -1,39 +1,49 @@
+// Login against the Apps Script backend. No passwords or user lists live in this repo:
+// the server checks the password and returns a session token that every request must carry.
 let AUTH_USERS = [];
 let SELECTED_USER = null;
 
-async function loadUsersFromCsv() {
-  const response = await fetch('users.csv');
-  if (!response.ok) throw new Error('users.csv konnte nicht geladen werden.');
-  const text = await response.text();
-  const lines = text.trim().split('\n');
-  const headers = lines[0].split(',');
+function authBaseUrl() {
+  return (typeof CONFIG !== 'undefined' && CONFIG.API_BASE_URLS && CONFIG.API_BASE_URLS[0]) || '';
+}
 
-  AUTH_USERS = lines.slice(1).map(line => {
-    const values = line.split(',');
-    const obj = {};
-    headers.forEach((header, index) => {
-      obj[header.trim()] = (values[index] || '').trim();
-    });
-    return obj;
+async function authPost(body) {
+  const response = await fetch(authBaseUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body)
   });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const result = await response.json();
+  if (!result?.success) throw new Error(result?.error || 'Request failed');
+  return result;
+}
+
+async function loadUsers() {
+  const response = await fetch(`${authBaseUrl()}?action=users&_=${Date.now()}`, { cache: 'no-store' });
+  const result = await response.json();
+  AUTH_USERS = result?.users || [];
   return AUTH_USERS;
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function renderUserSelection() {
   const container = document.getElementById('userSelection');
   if (!container) return;
 
-  container.innerHTML = AUTH_USERS.map(user => `
-    <button class="login-user-card" data-userkey="${user.user_key}">
-      <span class="login-user-name">${user.display_name}</span>
+  container.innerHTML = AUTH_USERS.map((user) => `
+    <button class="login-user-card" data-userkey="${escapeHtml(user.user_key)}">
+      <span class="login-user-name">${escapeHtml(user.display_name)}</span>
     </button>
   `).join('');
 
-  container.querySelectorAll('.login-user-card').forEach(btn => {
+  container.querySelectorAll('.login-user-card').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const userKey = btn.dataset.userkey;
-      SELECTED_USER = AUTH_USERS.find(u => u.user_key === userKey) || null;
-      document.querySelectorAll('.login-user-card').forEach(el => el.classList.remove('active'));
+      SELECTED_USER = AUTH_USERS.find((u) => u.user_key === btn.dataset.userkey) || null;
+      document.querySelectorAll('.login-user-card').forEach((el) => el.classList.remove('active'));
       btn.classList.add('active');
 
       const selectedName = document.getElementById('selectedUserName');
@@ -77,41 +87,56 @@ function getActiveUser() {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function loginUser() {
+function getAuthToken() {
+  return sessionStorage.getItem('financeToken') || '';
+}
+
+async function loginUser() {
   if (!SELECTED_USER) {
     setLoginMessage('Bitte zuerst einen Nutzer auswählen.');
     return false;
   }
   const password = document.getElementById('loginPassword').value;
-  if (password !== SELECTED_USER.password) {
-    setLoginMessage('Passwort falsch.');
+  const button = document.getElementById('loginBtn');
+  if (button) button.disabled = true;
+  try {
+    const result = await authPost({ action: 'login', user_key: SELECTED_USER.user_key, password });
+    const sessionUser = {
+      userKey: result.user.user_key,
+      displayName: result.user.display_name,
+      theme: result.user.theme
+    };
+    sessionStorage.setItem('financeToken', result.token);
+    sessionStorage.setItem('financeActiveUser', JSON.stringify(sessionUser));
+    document.getElementById('loginPassword').value = '';
+    applyUserTheme(sessionUser.theme);
+    showAppForLoggedInUser(sessionUser);
+    setLoginMessage('', false);
+    if (typeof onUserLoggedIn === 'function') onUserLoggedIn(sessionUser);
+    return true;
+  } catch (error) {
+    setLoginMessage(error.message || 'Login fehlgeschlagen.');
     return false;
+  } finally {
+    if (button) button.disabled = false;
   }
-  const sessionUser = {
-    userKey: SELECTED_USER.user_key,
-    displayName: SELECTED_USER.display_name,
-    theme: SELECTED_USER.theme
-  };
-  sessionStorage.setItem('financeActiveUser', JSON.stringify(sessionUser));
-  applyUserTheme(sessionUser.theme);
-  showAppForLoggedInUser(sessionUser);
-  setLoginMessage('', false);
-  if (typeof onUserLoggedIn === 'function') onUserLoggedIn(sessionUser);
-  return true;
 }
 
 function logoutUser() {
+  const token = getAuthToken();
+  if (token) authPost({ action: 'logout', token }).catch(() => {});
   sessionStorage.removeItem('financeActiveUser');
+  sessionStorage.removeItem('financeToken');
   document.body.classList.remove('theme-blue', 'theme-pink');
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appShell').style.display = 'none';
   document.getElementById('passwordSection').style.display = 'none';
-  document.querySelectorAll('.login-user-card').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.login-user-card').forEach((el) => el.classList.remove('active'));
   SELECTED_USER = null;
 }
 
 async function initAuth() {
-  await loadUsersFromCsv();
+  await loadUsers();
   renderUserSelection();
   document.getElementById('loginBtn')?.addEventListener('click', loginUser);
   document.getElementById('loginPassword')?.addEventListener('keydown', (event) => {
@@ -123,8 +148,10 @@ async function initAuth() {
   document.getElementById('logoutBtn')?.addEventListener('click', logoutUser);
 
   const activeUser = getActiveUser();
-  if (activeUser) {
+  if (activeUser && getAuthToken()) {
     applyUserTheme(activeUser.theme);
     showAppForLoggedInUser(activeUser);
+  } else {
+    sessionStorage.removeItem('financeActiveUser');
   }
 }

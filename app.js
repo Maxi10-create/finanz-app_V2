@@ -462,14 +462,24 @@
       "Keine funktionierende Apps-Script-URL gefunden. Bitte Deployment prüfen."
     );
   }
+  function authToken() {
+    return typeof getAuthToken === "function" ? getAuthToken() : "";
+  }
+  function handleUnauthorized(result) {
+    if (result?.error === "unauthorized" && typeof logoutUser === "function") {
+      logoutUser();
+      throw new Error("Sitzung abgelaufen. Bitte neu anmelden.");
+    }
+  }
   async function apiGet(action) {
+    // Data is only served to a logged-in session, so even reads go out as POST with the token.
     const baseUrl = await resolveApiBaseUrl();
-    const result = await fetchJson(
-      buildApiUrl(baseUrl, {
-        action,
-        _: Date.now()
-      })
-    );
+    const result = await fetchJson(baseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, token: authToken() })
+    });
+    handleUnauthorized(result);
     if (!result?.success) {
       throw new Error(
         result?.error ||
@@ -487,9 +497,11 @@
       },
       body: JSON.stringify({
         action,
-        payload
+        payload,
+        token: authToken()
       })
     });
+    handleUnauthorized(result);
     if (!result?.success) {
       throw new Error(
         result?.error ||
