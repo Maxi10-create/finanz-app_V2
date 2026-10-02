@@ -1935,3 +1935,97 @@ input[type="checkbox"] {
     grid-column: 2;
   }
 }
+
+
+/* =========================================================
+   DESIGN V3 -- ruhigere Flaechen, klare Hierarchie, Icons
+   (ueberschreibt die Basis, ohne Struktur oder Skripte zu aendern)
+========================================================= */
+
+:root {
+  --radius-lg: 18px;
+  --radius-md: 14px;
+  --sidebar-width: 252px;
+  --gap: 16px;
+  --hairline: rgba(184, 205, 241, 0.09);
+}
+
+::selection { background: var(--accent-glow); color: #fff; }
+* { scrollbar-width: thin; scrollbar-color: rgba(184, 205, 241, 0.22) transparent; }
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.num, .hero-value, .kpi-value, td, th { font-variant-numeric: tabular-nums; }
+
+/* Sidebar: Icons, ruhigere Navigation */
+.sidebar { gap: 14px; padding: 20px 14px; }
+.brand-title { font-size: 0.95rem; }
+.nav { gap: 4px; }
+.nav-btn { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; border-radius: 12px; font-size: 0.9rem; font-weight: 600; }
+.nav-btn::after {
+  order: -1; width: 18px; height: 18px; flex: 0 0 18px; background: currentColor; opacity: 0.8; content: "";
+  -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat;
+}
+.nav-btn.active::after, .nav-btn:hover::after { opacity: 1; }
+.nav-btn[data-tab="dashboard"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='9' rx='2'/%3E%3Crect x='14' y='3' width='7' height='5' rx='2'/%3E%3Crect x='14' y='12' width='7' height='9' rx='2'/%3E%3Crect x='3' y='16' width='7' height='5' rx='2'/%3E%3C/svg%3E"); }
+.nav-btn[data-tab="household"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 11l9-8 9 8'/%3E%3Cpath d='M5 10v10h14V10'/%3E%3Cpath d='M10 20v-5h4v5'/%3E%3C/svg%3E"); }
+.nav-btn[data-tab="wohnen"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 21V8l8-5 8 5v13'/%3E%3Cpath d='M9 21v-6h6v6'/%3E%3Cpath d='M9 10h.01M15 10h.01'/%3E%3C/svg%3E"); }
+.nav-btn[data-tab="urlaub"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 16l20-7-8 13-3-6z'/%3E%3Cpath d='M11 16L22 9'/%3E%3C/svg%3E"); }
+.nav-btn[data-tab="bookings"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='3'/%3E%3Cpath d='M3 10h18M8 15h4'/%3E%3C/svg%3E"); }
+.nav-btn[data-tab="zentrale"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2'/%3E%3C/svg%3E"); }
+.side-card { padding: 14px; background: rgba(255, 255, 255, 0.02); border-color: var(--hairline); }
+.side-card h3 { font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-strong); }
+
+/* Kopfzeile */
+.topbar { min-height: 68px; padding: 14px 0 10px; }
+.topbar h1 { font-size: clamp(1.15rem, 1.8vw, 1.45rem); font-weight: 750; letter-spacing: -0.03em; }
+.main { padding-bottom: 64px; }
+
+/* Karten: einheitlich, weniger Rauschen */
+.card, .hero-card, .kpi-card { border-color: var(--hairline); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 10px 30px rgba(0, 0, 0, 0.16); }
+.card { margin-bottom: var(--gap); padding: clamp(16px, 1.8vw, 22px); }
+.card:hover { border-color: rgba(184, 205, 241, 0.16); }
+.card-header { margin-bottom: 14px; }
+.card h2, .card-header h2 { margin: 0; font-size: 1.02rem; font-weight: 700; letter-spacing: -0.015em; }
+.card-header p { margin-bottom: 0; color: var(--muted); }
+
+/* Kennzahlen: Hero zuerst und groesser, Rest als gleichmaessiges Raster */
+.hero-grid { grid-template-columns: 1.5fr 1fr 1fr; gap: var(--gap); margin-bottom: var(--gap); }
+.kpi-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
+.hero-card { min-height: 128px; padding: 20px 22px; }
+.hero-value { font-size: clamp(1.7rem, 3vw, 2.5rem); margin-top: 10px; }
+.kpi-card { min-height: 104px; padding: 15px 16px; transition: transform var(--transition), border-color var(--transition); }
+.kpi-card:hover { transform: translateY(-2px); border-color: rgba(184, 205, 241, 0.2); }
+.kpi-label, .hero-label { font-size: 0.7rem; letter-spacing: 0.07em; color: var(--muted); }
+.hero-card.gradient-card .hero-label { color: rgba(255, 255, 255, 0.78); }
+.kpi-value { font-size: clamp(1.15rem, 1.6vw, 1.5rem); margin-top: 8px; }
+
+/* Diagramme: feste, ruhige Hoehen */
+.master-card { min-height: 0; }
+.master-card canvas { height: 340px !important; }
+.chart-grid { gap: var(--gap); }
+.chart-grid .card canvas { height: 280px !important; }
+
+/* Tabellen: lesbar, nichts abgeschnitten */
+.table-scroll { overflow-x: auto; border-radius: 12px; border: 1px solid var(--hairline); }
+.card table, .table-scroll table { width: 100%; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.card th { position: sticky; top: 0; z-index: 1; padding: 10px 14px; background: rgba(12, 25, 46, 0.98); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.card td { padding: 10px 14px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+.card tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+.card tbody tr:hover td { background: rgba(255, 255, 255, 0.045); }
+.card tbody tr:last-child td { border-bottom: 0; }
+.card td:last-child, .card th:last-child { text-align: right; }
+
+/* Formulare */
+input, select, textarea { border-radius: 11px; background: rgba(5, 12, 24, 0.55); border-color: var(--hairline); transition: border-color var(--transition), box-shadow var(--transition); }
+input:hover, select:hover, textarea:hover { border-color: var(--border-strong); }
+input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* Login */
+.login-card { border-radius: 24px; border-color: var(--hairline); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4); }
+.login-card h1 { font-size: 1.5rem; letter-spacing: -0.03em; text-align: center; }
+.login-user-card { transition: transform var(--transition), border-color var(--transition), background var(--transition); }
+.login-user-card:hover { transform: translateY(-2px); border-color: var(--accent-strong); }
+.login-user-card.active { border-color: var(--accent-strong); background: var(--accent-soft); }
+
+@media (max-width: 1100px) { .hero-grid { grid-template-columns: 1fr 1fr; } .hero-grid .gradient-card { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .hero-grid { grid-template-columns: 1fr; } .master-card canvas { height: 260px !important; } .card td, .card th { padding: 9px 10px; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

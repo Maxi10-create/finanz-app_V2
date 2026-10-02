@@ -2217,10 +2217,62 @@
     if (state.charts[name]) {
       state.charts[name].destroy();
     }
+    polishChartConfig(config);
     state.charts[name] = new Chart(
       canvas,
       config
     );
+  }
+  // Shared look for every chart: calm grid, readable type, no overshooting curves,
+  // no line into months that have not happened yet, and a message instead of an empty plot.
+  function polishChartConfig(config) {
+    Chart.defaults.font.family = '"Inter", system-ui, sans-serif';
+    Chart.defaults.font.size = 12;
+    Chart.defaults.color = "#8fa4c8";
+    Chart.defaults.borderColor = "rgba(184,205,241,0.08)";
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.boxWidth = 8;
+    Chart.defaults.plugins.tooltip.backgroundColor = "rgba(8,18,35,0.96)";
+    Chart.defaults.plugins.tooltip.borderColor = "rgba(184,205,241,0.2)";
+    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.plugins.tooltip.cornerRadius = 10;
+    config.options = config.options || {};
+    config.options.maintainAspectRatio = config.options.maintainAspectRatio ?? false;
+    const labels = (config.data && config.data.labels) || [];
+    const isMonthAxis = labels.length > 0 && labels.every((label) => /^\d{4}-\d{2}$/.test(String(label)));
+    if (config.type === "line") {
+      const now = currentMonth();
+      (config.data.datasets || []).forEach((dataset) => {
+        dataset.tension = 0.3;
+        dataset.cubicInterpolationMode = "monotone";
+        dataset.borderWidth = 2.5;
+        dataset.pointRadius = 2.5;
+        dataset.pointHoverRadius = 5;
+        dataset.spanGaps = false;
+        if (isMonthAxis && Array.isArray(dataset.data)) {
+          dataset.data = dataset.data.map((value, index) => (String(labels[index]) > now ? null : value));
+        }
+      });
+    }
+    const hasData = (config.data.datasets || []).some((dataset) =>
+      (dataset.data || []).some((value) => Number(value) > 0 || Number(value) < 0)
+    );
+    config.plugins = (config.plugins || []).concat([{
+      id: "emptyMessage",
+      afterDraw(chart) {
+        if (hasData) return;
+        const { ctx, chartArea } = chart;
+        if (!chartArea) return;
+        ctx.save();
+        ctx.fillStyle = "#8fa4c8";
+        ctx.font = '500 13px "Inter", system-ui, sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Keine Daten im gewählten Zeitraum", (chartArea.left + chartArea.right) / 2, (chartArea.top + chartArea.bottom) / 2);
+        ctx.restore();
+      }
+    }]);
   }
   function compositionMonths() {
     const mode =
