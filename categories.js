@@ -131,10 +131,16 @@
             <tbody></tbody>
           </table>
         </div>
-        <datalist id="cmMainList"></datalist>`;
+        <datalist id="cmMainList"></datalist>
+        <div class="cm-hausbau" data-cm="hausbau" hidden>
+          <h3>Hausbau-Buchungen im Haushalt</h3>
+          <p data-cm="hbtext"></p>
+          <button class="btn btn-ghost" type="button" data-cm="hbmove">In den Hausbau-Bereich verschieben</button>
+        </div>`;
       card.addEventListener("click", onClick);
       card.addEventListener("input", onInput);
     }
+    renderHausbauMove();
   }
 
   function onClick(event) {
@@ -142,6 +148,7 @@
     if (action === "load") load();
     if (action === "run") run();
     if (action === "copy") copyList();
+    if (action === "hbmove") moveHausbauBookings();
   }
 
   function onInput(event) {
@@ -303,6 +310,79 @@
       busy = false;
       runBtn.textContent = "Umstellung durchführen";
       renderSummary();
+    }
+  }
+
+  /* ---- Hausbau bookings that were entered as household expenses ---------- */
+
+  // Building costs belong in the Hausbau area (single source for the cockpit too);
+  // as household bookings they would count as monthly costs.
+  const HAUSBAU_BLOCK = "Bürokratie & Gebühren";
+
+  function hausbauBookings() {
+    const me = app().currentUserName();
+    return (app().data.transactions || []).filter((row) =>
+      String(row.is_deleted || "").toLowerCase() !== "ja" &&
+      String(row.booking_type || "expense").toLowerCase() !== "settlement" &&
+      String(row.main_category || "").trim().toLowerCase() === "hausbau" &&
+      String(row.owner_user || "").trim() === me
+    );
+  }
+
+  function renderHausbauMove() {
+    const box = root()?.querySelector('[data-cm="hausbau"]');
+    if (!box) return;
+    const rows = hausbauBookings();
+    box.hidden = !rows.length;
+    if (!rows.length) return;
+    const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    box.querySelector('[data-cm="hbtext"]').textContent =
+      `${rows.length} Buchungen (${app().currency(total)}) stehen als Haushaltsausgabe unter „Hausbau“ und zählen deshalb zu den Monatskosten. ` +
+      `Sie werden als bezahlte Hausbau-Kosten im Budgetblock „${HAUSBAU_BLOCK}“ übernommen (Aufteilung nach Nutzfläche) und im Haushalt gelöscht.`;
+  }
+
+  async function moveHausbauBookings() {
+    const rows = hausbauBookings();
+    if (busy || !rows.length) return;
+    if (!window.confirm(`${rows.length} Buchungen in den Hausbau-Bereich verschieben?`)) return;
+    busy = true;
+    const btn = root().querySelector('[data-cm="hbmove"]');
+    btn.disabled = true;
+    let moved = 0;
+    let last = null;
+    try {
+      const share = window.Hausbau?.areaShareMax?.() ?? 53.07;
+      for (const row of rows) {
+        btn.textContent = `Verschiebe ${moved + 1} von ${rows.length} …`;
+        await app().apiPost("hausbauSave", {
+          entity: "expense",
+          record: {
+            date: row.date,
+            title: row.title || row.sub_category || "Hausbau",
+            main_category: HAUSBAU_BLOCK,
+            sub_category: row.sub_category || "",
+            unit: "shared",
+            allocation_key: "AREA",
+            share_max: share,
+            amount: row.amount,
+            status: "bezahlt",
+            paid_by: "max",
+            funding_source: "eigenmittel",
+            note: [row.note, `übernommen aus Haushaltsbuchung ${row.id}`].filter(Boolean).join(" · ")
+          }
+        });
+        last = await app().apiPost("deleteTransaction", { id: row.id });
+        moved++;
+      }
+      app().showMessage(`${moved} Buchungen in den Hausbau-Bereich verschoben.`, "success");
+    } catch (err) {
+      app().showMessage(`Nach ${moved} Buchungen abgebrochen: ${err.message}`, "error");
+    } finally {
+      busy = false;
+      btn.disabled = false;
+      btn.textContent = "In den Hausbau-Bereich verschieben";
+      if (last) await app().refreshAfterWrite(last);
+      renderHausbauMove();
     }
   }
 
