@@ -19,7 +19,47 @@
     [/ abos?$/, "Abos & Kommunikation", "Sonstiges"]
   ];
 
+  // Maximilian's own categories, decided one by one (24.10.2026). Exact match on
+  // "module|main|sub"; these win over every rule and are never marked "bitte prüfen".
+  const DECIDED = {
+    "Haushalt|Abo|Daten": ["Abos & Kommunikation", "Software & Cloud"],
+    "Haushalt|Abo|Netzbetreiber": ["Abos & Kommunikation", "Handy"],
+    "Haushalt|Abo|Unterhaltung": ["Abos & Kommunikation", "Streaming"],
+    // Contains a Zara order (182,70 €) and an ID card fee (20 €); the bigger one decides.
+    "Haushalt|Alltag|Abo": ["Shopping", "Kleidung & Schuhe"],
+    "Haushalt|Alltag|Apotheke": ["Gesundheit & Pflege", "Apotheke"],
+    "Haushalt|Alltag|Friseur": ["Gesundheit & Pflege", "Friseur & Körperpflege"],
+    "Haushalt|Alltag|Kleidung": ["Shopping", "Kleidung & Schuhe"],
+    "Haushalt|Alltag|Kosmetik": ["Gesundheit & Pflege", "Friseur & Körperpflege"],
+    "Haushalt|Alltag|Online-Einkauf": ["Shopping", "Online-Einkauf"],
+    "Haushalt|Arbeit|Firmenreise": ["Arbeit", "Firmenreise"],
+    "Haushalt|Bank|Bancomat": ["Finanzen & Gebühren", "Bargeld (Bancomat)"],
+    "Haushalt|Bank|Bankspesen": ["Finanzen & Gebühren", "Bankgebühren"],
+    "Haushalt|Bank|Hausrate": ["Bank", "Hausrate"],
+    "Haushalt|Bank|Investitionen": ["Sparen & Investieren", "Investitionen"],
+    "Haushalt|Freizeit|Aktivitäten": ["Freizeit & Hobby", "Aktivitäten"],
+    "Haushalt|Freizeit|Geschenke": ["Geschenke & Spenden", "Geschenke"],
+    "Haushalt|Freizeit|Restaurant": ["Essen & Ausgehen", "Restaurant"],
+    "Haushalt|Mobilität|Auto Leasing": ["Mobilität", "Leasing/Kredit"],
+    "Haushalt|Mobilität|Car wash": ["Mobilität", "Service & Reifen"],
+    "Haushalt|Mobilität|Laden/Tanken": ["Mobilität", "Treibstoff/Laden"],
+    "Haushalt|Mobilität|Maut": ["Mobilität", "Vignette/Maut/Parken"],
+    "Haushalt|Mobilität|Parken": ["Mobilität", "Vignette/Maut/Parken"],
+    "Haushalt|Wohnen|Akonto-Nebenkosten": ["Wohnen", "Betriebskosten"],
+    "Haushalt|Wohnen|Haushaltsbedarf": ["Lebensmittel & Haushalt", "Haushaltsbedarf"],
+    "Haushalt|Wohnen|Internet": ["Wohnen", "Internet & TV/ORF"],
+    "Haushalt|Wohnen|Lebensmittel": ["Lebensmittel & Haushalt", "Supermarkt"],
+    "Haushalt|Wohnen|Versicherung": ["Wohnen", "Haushaltsversicherung"]
+  };
+
   function refine(row) {
+    const decided = DECIDED[`${row.module}|${row.main_category}|${row.sub_category}`];
+    if (decided) {
+      [row.new_main, row.new_sub] = decided;
+      row.rule = "decided";
+      row.uncertain = false;
+      return;
+    }
     if (row.module !== "Haushalt") return;
     const text = `${row.main_category} ${row.sub_category}`.toLowerCase();
     const keep = /arbeit|mapact|kaution|hausbau/.test(text);
