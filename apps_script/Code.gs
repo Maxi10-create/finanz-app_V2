@@ -1,4 +1,4 @@
-const API_VERSION = 'v12-2026-10-24-kategorien';
+const API_VERSION = 'v13-2026-10-24-hausbau-import';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -88,7 +88,8 @@ const SCHEMAS = {
   [SHEETS.BUILD_EXPENSES]: [
     'id', 'date', 'month_key', 'title', 'main_category', 'sub_category',
     'unit', 'allocation_key', 'share_max', 'vendor', 'invoice_no', 'amount',
-    'status', 'paid_by', 'funding_source', 'loan_id', 'due_date', 'note'
+    'status', 'paid_by', 'funding_source', 'loan_id', 'due_date', 'note',
+    'trade', 'tax_bonus', 'source_id'
   ].concat(HAUSBAU_AUDIT_FIELDS),
 
   [SHEETS.BUILD_CATEGORIES]: [
@@ -407,6 +408,10 @@ function doPost(e) {
 
         case 'hausbaudelete':
           result = deleteHausbauRecord_(payload);
+          break;
+
+        case 'hausbauimport':
+          result = importHausbauExpenses_(payload, auth);
           break;
 
         case 'categorymigrate':

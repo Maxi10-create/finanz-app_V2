@@ -34,6 +34,7 @@ const HAUSBAU_ENUMS = {
   paid_by: ['max', 'ingrid'],
   from_person: ['max', 'ingrid'],
   funding_source: ['eigenmittel', 'kredit', 'foerderung'],
+  tax_bonus: ['keine', 'ristrutturazione', 'ecobonus', 'mobili'],
   loan_type: ['bank', 'foerderdarlehen', 'zuschuss'],
   rate_type: ['fix', 'variabel'],
   event_type: ['auszahlung', 'sondertilgung', 'zinsanpassung', 'ratenaenderung', 'gebuehr', 'saldo_bank', 'zuschuss']
@@ -132,6 +133,59 @@ function deleteHausbauRecord_(payload) {
   assertRequiredId_(payload.id, 'id');
   softDeleteById_(entity.sheet, 'id', payload.id);
   return { deletedId: String(payload.id) };
+}
+
+/**
+ * payload = { records: [expense, ...], moveTransactionIds: [id, ...] }.
+ * Takes over payments from the house dashboard and Hausbau bookings that were entered as
+ * household expenses, in one locked request. A record whose source_id is already in
+ * Build_Expenses is skipped, so running the import twice adds nothing.
+ * Every record is checked before the first row is written.
+ */
+function importHausbauExpenses_(payload, auth) {
+  const userName = normalizePersonName_(auth.user.display_name);
+  const sheet = SHEETS.BUILD_EXPENSES;
+  const known = {};
+  readSheetObjects_(sheet).forEach(function (row) {
+    if (row.source_id && String(row.is_deleted || '').toLowerCase() !== 'ja') known[row.source_id] = true;
+  });
+
+  const records = (payload.records || []).map(function (input) {
+    const record = normalizeHausbauRecord_('expense', Object.assign({}, input, { id: '' }), false, userName);
+    if (!record.source_id) throw new Error('Import ohne Herkunft: ' + record.title);
+    return record;
+  });
+
+  // Only Hausbau bookings may be removed from the household this way.
+  const moveIds = (payload.moveTransactionIds || []).map(String);
+  if (moveIds.length) {
+    const hausbauTx = {};
+    readSheetObjects_(SHEETS.TRANSACTIONS).forEach(function (row) {
+      if (String(row.main_category || '').trim().toLowerCase() === 'hausbau') hausbauTx[String(row.id)] = true;
+    });
+    moveIds.forEach(function (id) {
+      if (!hausbauTx[id]) throw new Error('Keine Hausbau-Buchung: ' + id);
+    });
+  }
+
+  let imported = 0;
+  let skipped = 0;
+  records.forEach(function (record) {
+    if (known[record.source_id]) {
+      skipped++;
+      return;
+    }
+    record.id = makeUniqueId_(sheet, 'id', hausbauEntity_('expense').prefix);
+    appendByHeaders_(sheet, record);
+    known[record.source_id] = true;
+    imported++;
+  });
+
+  moveIds.forEach(function (id) {
+    softDeleteById_(SHEETS.TRANSACTIONS, 'id', id);
+  });
+
+  return { imported: imported, skipped: skipped, moved: moveIds.length };
 }
 
 function normalizeHausbauRecord_(entityName, input, isUpdate, userName) {
