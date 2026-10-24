@@ -136,8 +136,12 @@ function logoutUser() {
 }
 
 async function initAuth() {
-  await loadUsers();
-  renderUserSelection();
+  // With a stored session the user list is only needed after a logout, so load it
+  // in the background instead of making the dashboard wait for an extra round trip.
+  const usersReady = loadUsers().then(renderUserSelection).catch((error) => {
+    console.error(error);
+    setLoginMessage('Nutzerliste konnte nicht geladen werden.');
+  });
   document.getElementById('loginBtn')?.addEventListener('click', loginUser);
   document.getElementById('loginPassword')?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -153,5 +157,6 @@ async function initAuth() {
     showAppForLoggedInUser(activeUser);
   } else {
     sessionStorage.removeItem('financeActiveUser');
+    await usersReady;
   }
 }

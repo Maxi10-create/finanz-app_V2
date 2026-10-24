@@ -442,6 +442,11 @@
     const urls =
       (typeof CONFIG !== "undefined" && CONFIG.API_BASE_URLS) ||
       [];
+    // With a single deployment there is nothing to choose, so skip the extra ping round trip.
+    if (urls.length === 1) {
+      state.activeApiBaseUrl = urls[0];
+      return urls[0];
+    }
     for (const baseUrl of urls) {
       try {
         const result = await fetchJson(
@@ -1872,7 +1877,7 @@
         "Der Einkaufsartikel wurde nicht gefunden."
       );
     }
-    await apiPost(
+    const result = await apiPost(
       "updateShoppingItem",
       {
         id: item.id,
@@ -1882,9 +1887,7 @@
         updated_by: currentUserName()
       }
     );
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
   }
   async function deleteShoppingCategory(category) {
     if (!category) return;
@@ -1903,9 +1906,7 @@
         }
       );
     resetFormUi("shoppingItem");
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     showMessage(
       `${result.deletedCount || 0} Artikel aus „${category}“ gelöscht.`,
       "success"
@@ -1936,9 +1937,7 @@
         {}
       );
     resetFormUi("shoppingItem");
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     showMessage(
       `${result.deletedCount || 0} erledigte Einkaufsartikel gelöscht.`,
       "success"
@@ -1967,9 +1966,7 @@
         {}
       );
     resetFormUi("shoppingItem");
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     showMessage(
       `${result.deletedCount || 0} Einkaufsartikel gelöscht. Die Einkaufsliste ist jetzt leer.`,
       "success"
@@ -5248,9 +5245,7 @@
         payload
       );
     resetFormUi(type);
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     const warning =
       result.warning
         ? ` ${result.warning}`
@@ -5301,9 +5296,7 @@
           data
         );
       resetFormUi(type);
-      await loadAll({
-        silentSuccess: true
-      });
+      await refreshAfterWrite(result);
       const baseMessage =
         editing
           ? successUpdateText
@@ -5977,6 +5970,29 @@
       }
     );
   }
+  function applyData(data) {
+    state.data =
+      withClientKeys(
+        data ||
+        EMPTY_DATA()
+      );
+    rebuildTripIndex();
+    renderAll();
+    setText(
+      els.syncStatus,
+      `Synchronisiert: ${new Date().toLocaleString("de-DE")}`
+    );
+  }
+  // Write responses carry the fresh data, so a save needs one round trip instead of two.
+  async function refreshAfterWrite(result) {
+    if (result?.data) {
+      applyData(result.data);
+      return;
+    }
+    await loadAll({
+      silentSuccess: true
+    });
+  }
   async function loadAll({
     silentSuccess = false
   } = {}) {
@@ -5993,17 +6009,7 @@
       }
       const result =
         await apiGet("getAll");
-      state.data =
-        withClientKeys(
-          result.data ||
-          EMPTY_DATA()
-        );
-      rebuildTripIndex();
-      renderAll();
-      setText(
-        els.syncStatus,
-        `Synchronisiert: ${new Date().toLocaleString("de-DE")}`
-      );
+      applyData(result.data);
       if (!silentSuccess) {
         showMessage(
           "Daten erfolgreich geladen.",
