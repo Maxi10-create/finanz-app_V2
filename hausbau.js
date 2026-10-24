@@ -20,6 +20,9 @@
     zuschuss: "Zuschuss erhalten"
   };
   const DEFAULT_AREA = { max: 95, ingrid: 84 };
+  // Tausendstel from the Kostenschlüssel of the house dashboard (W2 = Maximilian, W1 = Ingrid).
+  const PROMILLE = { max: 534, ingrid: 466 };
+  const TAX_BONUS = { keine: "keiner", ristrutturazione: "Ristrutturazione", ecobonus: "Ecobonus", mobili: "Bonus Mobili" };
   // Same budget blocks as the Umbau Hintersun 8 cockpit, so both show the same numbers.
   const DEFAULT_CATEGORIES = {
     "Abbruch & Rohbau": ["Abbruch", "Baumeister/Maurer", "Dach", "Fenster & Türen", "Fassade & Dämmung"],
@@ -75,12 +78,17 @@
     return round2(areaMax / (areaMax + areaIngrid) * 100);
   }
 
+  function promilleShareMax() {
+    return round2(PROMILLE.max / (PROMILLE.max + PROMILLE.ingrid) * 100);
+  }
+
   /* ---- allocation keys ------------------------------------------------- */
 
   function allocationKeys() {
     const builtIn = [
       { id: "MAX", name: "Nur Maximilian", share_max: 100 },
       { id: "INGRID", name: "Nur Ingrid", share_max: 0 },
+      { id: "PROMILLE", name: `Tausendstel (${PROMILLE.max} / ${PROMILLE.ingrid})`, share_max: promilleShareMax() },
       { id: "AREA", name: `Nutzfläche (${areaShareMax().toFixed(1)} / ${(100 - areaShareMax()).toFixed(1)})`, share_max: areaShareMax() },
       { id: "HALF", name: "50 / 50", share_max: 50 }
     ];
@@ -96,7 +104,7 @@
   function defaultKeyForUnit(unit) {
     if (unit === "max") return "MAX";
     if (unit === "ingrid") return "INGRID";
-    return "AREA";
+    return "PROMILLE";
   }
 
   /* ---- expenses & Ingrid balance ---------------------------------------- */
@@ -447,7 +455,7 @@
         </section>
         <div class="chart-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Kosten nach Gewerk</h2><p>Anteil Maximilian und Ingrid</p></div></div>
+            <div class="card-header"><div><h2>Kosten nach Budgetblock</h2><p>Anteil Maximilian und Ingrid</p></div></div>
             <canvas id="hbCategoryChart"></canvas>
           </section>
           <section class="card">
@@ -457,9 +465,9 @@
         </div>
         <div class="table-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Gewerke</h2><p>Bezahlt und offen, mit Aufteilung</p></div></div>
+            <div class="card-header"><div><h2>Budgetblöcke</h2><p>Bezahlt und offen, mit Aufteilung</p></div></div>
             <div class="table-scroll"><table class="data-table" id="hbCategoryTable">
-              <thead><tr><th>Gewerk</th><th class="num">Gesamt</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th class="num">Offen</th></tr></thead>
+              <thead><tr><th>Budgetblock</th><th class="num">Gesamt</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th class="num">Offen</th></tr></thead>
               <tbody></tbody></table></div>
           </section>
           <section class="card">
@@ -478,13 +486,14 @@
       </div>
 
       <div class="hb-section" data-section="expenses" hidden>
+        <section class="card" id="hbImportCard" hidden></section>
         <section class="card">
           <div class="card-header"><div><h2>Hausbau-Ausgabe</h2><p id="hbExpenseMode">Neue Ausgabe</p></div></div>
           <form class="form-grid compact-form" data-entity="expense" id="hbExpenseForm">
             <input type="hidden" name="id" />
             ${field("Datum", `<input type="date" name="date" required />`)}
             ${field("Titel", `<input type="text" name="title" required placeholder="z. B. Elektroinstallation 1. Teilrechnung" />`)}
-            ${field("Gewerk", `<select name="main_category" id="hbExpenseMain"></select>`)}
+            ${field("Budgetblock", `<select name="main_category" id="hbExpenseMain"></select>`)}
             ${field("Unterkategorie", `<select name="sub_category" id="hbExpenseSub"></select>`)}
             ${field("Bauteil", `<select name="unit" id="hbExpenseUnit">${options(UNITS, "shared")}</select>`)}
             ${field("Aufteilung", `<select name="allocation_key" id="hbExpenseKey"></select>`)}
@@ -495,24 +504,27 @@
             ${field("Bezahlt aus", `<select name="funding_source" id="hbExpenseFunding">${options(FUNDING, "eigenmittel")}</select>`)}
             ${field("Kredit / Förderung", `<select name="loan_id" id="hbExpenseLoan"></select>`)}
             ${field("Firma", `<input type="text" name="vendor" list="hbVendorList" />`)}
+            ${field("Gewerk (wie im Hausbau-Dashboard)", `<input type="text" name="trade" list="hbTradeList" placeholder="z. B. Baumeister" />`)}
+            ${field("Steuerbonus", `<select name="tax_bonus">${options(TAX_BONUS, "keine")}</select>`)}
             ${field("Rechnungsnummer", `<input type="text" name="invoice_no" />`)}
             ${field("Fällig am", `<input type="date" name="due_date" />`)}
             ${field("Notiz", `<textarea name="note" rows="2"></textarea>`, "full")}
             <datalist id="hbVendorList"></datalist>
+            <datalist id="hbTradeList"></datalist>
             ${formButtons("expense", "Ausgabe speichern")}
           </form>
         </section>
         <section class="card">
           <div class="card-header"><div><h2>Alle Ausgaben</h2><p id="hbExpenseCount"></p></div></div>
           <div class="form-grid compact-form">
-            ${field("Gewerk", `<select id="hbFilterMain"></select>`)}
+            ${field("Budgetblock", `<select id="hbFilterMain"></select>`)}
             ${field("Bauteil", `<select id="hbFilterUnit">${options(UNITS, "", "Alle Bauteile")}</select>`)}
             ${field("Status", `<select id="hbFilterStatus">${options(STATUS, "", "Alle")}</select>`)}
             ${field("Bezahlt von", `<select id="hbFilterPaidBy">${options(PEOPLE, "", "Alle")}</select>`)}
             ${field("Suche", `<input type="search" id="hbFilterText" placeholder="Titel, Firma, Rechnung" />`)}
           </div>
           <div class="table-scroll"><table class="data-table" id="hbExpenseTable">
-            <thead><tr><th>Datum</th><th>Titel</th><th>Gewerk</th><th>Bauteil</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
+            <thead><tr><th>Datum</th><th>Titel</th><th>Budgetblock</th><th>Bauteil</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
             <tbody></tbody></table></div>
         </section>
       </div>
@@ -630,16 +642,16 @@
           </section>
         </div>
         <section class="card">
-          <div class="card-header"><div><h2>Eigene Kategorien</h2><p>Ergänzen die Standard-Gewerke</p></div></div>
+          <div class="card-header"><div><h2>Eigene Kategorien</h2><p>Ergänzen die Standard-Budgetblöcke</p></div></div>
           <form class="form-grid compact-form" data-entity="category">
             <input type="hidden" name="id" />
-            ${field("Gewerk", `<input type="text" name="main_category" required list="hbMainList" />`)}
+            ${field("Budgetblock", `<input type="text" name="main_category" required list="hbMainList" />`)}
             ${field("Unterkategorie", `<input type="text" name="sub_category" />`)}
             <datalist id="hbMainList"></datalist>
             ${formButtons("category", "Kategorie speichern")}
           </form>
           <div class="table-scroll"><table class="data-table" id="hbCategoryAdminTable">
-            <thead><tr><th>Gewerk</th><th>Unterkategorie</th><th>Aktion</th></tr></thead>
+            <thead><tr><th>Budgetblock</th><th>Unterkategorie</th><th>Aktion</th></tr></thead>
             <tbody></tbody></table></div>
         </section>
       </div>`;
@@ -898,6 +910,7 @@
     renderIngrid();
     renderLoans();
     renderSettings();
+    window.HausbauImport?.render();
     showSection();
   }
 
@@ -911,7 +924,7 @@
     const mains = Object.keys(cats);
     setOptions(document.getElementById("hbExpenseMain"), listOptions(mains, "", "—"));
     if (!document.getElementById("hbExpenseSub").options.length) fillExpenseSubcategories();
-    setOptions(document.getElementById("hbFilterMain"), listOptions(mains, "", "Alle Gewerke"));
+    setOptions(document.getElementById("hbFilterMain"), listOptions(mains, "", "Alle Budgetblöcke"));
     const keySelect = document.getElementById("hbExpenseKey");
     setOptions(keySelect, allocationKeys().map((key) => `<option value="${esc(key.id)}">${esc(key.name)}</option>`).join(""));
     const allLoans = alive(data()?.loans);
@@ -920,6 +933,8 @@
     setOptions(document.getElementById("hbEventLoan"), loanOptions || `<option value="">Zuerst einen Kredit anlegen</option>`);
     const vendors = [...new Set(expenses().map((row) => row.vendor).filter(Boolean))].sort();
     document.getElementById("hbVendorList").innerHTML = vendors.map((vendor) => `<option value="${esc(vendor)}"></option>`).join("");
+    const trades = [...new Set(expenses().map((row) => row.trade).filter(Boolean))].sort();
+    document.getElementById("hbTradeList").innerHTML = trades.map((trade) => `<option value="${esc(trade)}"></option>`).join("");
     document.getElementById("hbMainList").innerHTML = mains.map((main) => `<option value="${esc(main)}"></option>`).join("");
   }
 
@@ -962,7 +977,7 @@
 
     const byCategory = new Map();
     rows.forEach((row) => {
-      const key = row.main_category || "Ohne Gewerk";
+      const key = row.main_category || "Ohne Budgetblock";
       const entry = byCategory.get(key) || { total: 0, max: 0, ingrid: 0, open: 0 };
       const shares = expenseShares(row);
       entry.total += shares.amount;
@@ -1056,7 +1071,7 @@
       (!filters.unit || row.unit === filters.unit) &&
       (!filters.status || (row.status || "bezahlt") === filters.status) &&
       (!filters.paidBy || row.paid_by === filters.paidBy) &&
-      (!filters.text || [row.title, row.vendor, row.invoice_no, row.note].join(" ").toLowerCase().includes(filters.text))
+      (!filters.text || [row.title, row.vendor, row.trade, row.invoice_no, row.note].join(" ").toLowerCase().includes(filters.text))
     );
     const total = rows.reduce((sum, row) => sum + num(row.amount), 0);
     setText("hbExpenseCount", `${rows.length} Einträge · ${eur(total)}`);
@@ -1066,7 +1081,7 @@
           const source = row.paid_by === "ingrid" ? "Ingrid" : `Maximilian · ${FUNDING[row.funding_source] || "Eigenmittel"}`;
           return `<tr>
             <td>${esc(app().formatGermanDate(row.date))}</td>
-            <td>${esc(row.title)}${row.vendor ? `<div class="text-muted">${esc(row.vendor)}${row.invoice_no ? ` · ${esc(row.invoice_no)}` : ""}</div>` : ""}</td>
+            <td>${esc(row.title)}${row.vendor || row.trade ? `<div class="text-muted">${esc([row.trade, row.vendor].filter(Boolean).join(" · "))}${row.invoice_no ? ` · ${esc(row.invoice_no)}` : ""}</div>` : ""}</td>
             <td>${esc(row.main_category || "—")}${row.sub_category ? `<div class="text-muted">${esc(row.sub_category)}</div>` : ""}</td>
             <td>${esc(UNITS[row.unit] || "—")}</td>
             <td class="num">${eur(shares.amount)}</td>
@@ -1199,7 +1214,7 @@
     const categories = alive(data()?.categories);
     document.querySelector("#hbCategoryAdminTable tbody").innerHTML = categories.length
       ? categories.map((row) => `<tr><td>${esc(row.main_category)}</td><td>${esc(row.sub_category || "—")}</td><td>${rowActions("category", row.id)}</td></tr>`).join("")
-      : empty(3, "Nur Standard-Gewerke in Verwendung");
+      : empty(3, "Nur Standard-Budgetblöcke in Verwendung");
   }
 
   function renderDashboardCard() {
@@ -1251,7 +1266,7 @@
       <p>Ingrid Harder und Maximilian Hofer · Stand ${esc(app().formatGermanDate(app().todayDate()))}</p>
       <p class="total">${balance > 0.005 ? `Ingrid schuldet Maximilian ${eur(balance)}` : balance < -0.005 ? `Maximilian schuldet Ingrid ${eur(-balance)}` : "Ausgeglichen"}</p>
       <h2>Positionen mit Anteil Ingrid</h2>
-      <table><thead><tr><th>Datum</th><th>Position</th><th>Gewerk</th><th class="r">Betrag</th><th class="r">Anteil</th><th class="r">Ingrid</th><th>Bezahlt von</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>
+      <table><thead><tr><th>Datum</th><th>Position</th><th>Budgetblock</th><th class="r">Betrag</th><th class="r">Anteil</th><th class="r">Ingrid</th><th>Bezahlt von</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>
       <h2>Saldo-Entwicklung</h2>
       <table><thead><tr><th>Datum</th><th>Position</th><th class="r">Wirkung</th></tr></thead><tbody>${balanceRows}</tbody></table>
       <p>Positiv: zugunsten Maximilian. Negativ: zugunsten Ingrid.</p>
@@ -1261,5 +1276,8 @@
     win.print();
   }
 
-  window.Hausbau = { sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance, areaShareMax };
+  window.Hausbau = {
+    sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance,
+    areaShareMax, promilleShareMax, categoryMap, expenses
+  };
 })();

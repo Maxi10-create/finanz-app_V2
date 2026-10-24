@@ -2078,7 +2078,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); 
 /* Kategorien neu ordnen */
 #categoryMigrationCard[hidden] { display: none; }
 #categoryMigrationCard { margin-top: 18px; }
-#categoryMigrationCard .cm-summary { margin: 12px 0; color: var(--muted-strong); }
+#categoryMigrationCard .cm-summary, #hbImportCard .cm-summary { margin: 12px 0; color: var(--muted-strong); }
 #categoryMigrationCard input { min-width: 150px; }
 .pill.cm-move { color: #8db4ff; border-color: rgba(141, 180, 255, 0.45); }
 .pill.cm-warn { color: #ffb4a8; border-color: rgba(255, 140, 120, 0.5); }
@@ -2111,6 +2111,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); 
 @media (max-width: 760px) { .trend-select, .trend-select select { width: 100%; } .trend-card canvas { height: 240px !important; } }
 .pill.cm-check { color: #ffd36b; border-color: rgba(255, 211, 107, 0.5); }
 #categoryMigrationCard .actions-row { flex-wrap: wrap; }
-#categoryMigrationCard .cm-hausbau { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
-#categoryMigrationCard .cm-hausbau h3 { margin: 0 0 6px; font-size: 1rem; }
-#categoryMigrationCard .cm-hausbau[hidden] { display: none; }
+#hbImportCard .actions-row { flex-wrap: wrap; }
+#hbImportCard label.btn { cursor: pointer; }
+#hbImportCard select { min-width: 150px; }
+#hbImportCard[hidden] { display: none; }

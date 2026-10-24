@@ -6381,7 +6381,7 @@
     });
   }
   // The web app and the Apps Script backend are deployed separately; say so when they drift apart.
-  const MIN_BACKEND_VERSION = 12;
+  const MIN_BACKEND_VERSION = 13;
   function warnIfBackendOutdated(version) {
     const match = /^v(\d+)/.exec(String(version || ""));
     if (match && Number(match[1]) >= MIN_BACKEND_VERSION) return;
