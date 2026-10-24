@@ -1,4 +1,4 @@
-const API_VERSION = 'v10-2026-10-24-hausbau';
+const API_VERSION = 'v11-2026-10-24-hausbau-2';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -107,7 +107,7 @@ const SCHEMAS = {
     'id', 'title', 'loan_type', 'lender', 'amount', 'interest_rate',
     'rate_type', 'fixed_until', 'term_months', 'monthly_rate',
     'first_rate_month', 'commitment_fee_rate', 'commitment_free_months',
-    'share_max', 'note'
+    'share_max', 'note', 'conditions', 'conditions_due'
   ].concat(HAUSBAU_AUDIT_FIELDS),
 
   [SHEETS.LOAN_EVENTS]: [
@@ -120,7 +120,8 @@ const DATE_FIELDS = {
   date: true,
   start_date: true,
   end_date: true,
-  due_date: true
+  due_date: true,
+  conditions_due: true
 };
 
 const MONTH_FIELDS = {

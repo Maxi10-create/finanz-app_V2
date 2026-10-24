@@ -2057,3 +2057,20 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); 
   margin-top: 18px;
 }
 .nav-btn[data-tab="hausbau"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21h18M5 21V11l7-5 7 5v10'/%3E%3Cpath d='M10 21v-5h4v5M16 3v4'/%3E%3C/svg%3E"); }
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#quickAddSelect {
+  width: auto;
+  min-width: 120px;
+  font-weight: 700;
+}
+
+.hb-overdue {
+  color: var(--danger, #e5484d);
+  font-weight: 700;
+}
