@@ -1,4 +1,4 @@
-const API_VERSION = 'v9-2026-10-24-perf-cache';
+const API_VERSION = 'v10-2026-10-24-hausbau';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -12,8 +12,20 @@ const SHEETS = {
   CATEGORIES: 'Categories',
   FIXED_COSTS: 'Fixed_Costs',
   TASKS: 'Household_Tasks',
-  SHOPPING: 'Shopping_List'
+  SHOPPING: 'Shopping_List',
+  BUILD_PROJECT: 'Build_Project',
+  BUILD_EXPENSES: 'Build_Expenses',
+  BUILD_CATEGORIES: 'Build_Categories',
+  BUILD_KEYS: 'Build_Allocation_Keys',
+  BUILD_SETTLEMENTS: 'Build_Settlements',
+  LOANS: 'Loans',
+  LOAN_EVENTS: 'Loan_Events'
 };
+
+// Hausbau sheets share these audit columns (see Hausbau.gs).
+const HAUSBAU_AUDIT_FIELDS = [
+  'created_at', 'updated_at', 'created_by', 'updated_by', 'is_deleted'
+];
 
 const SCHEMAS = {
   [SHEETS.INCOME]: [
@@ -66,19 +78,57 @@ const SCHEMAS = {
   [SHEETS.SHOPPING]: [
     'id', 'item', 'pieces', 'quantity', 'category', 'supermarket', 'status',
     'created_by', 'created_at', 'updated_by', 'updated_at'
-  ]
+  ],
+
+  [SHEETS.BUILD_PROJECT]: [
+    'id', 'title', 'total_budget', 'budget_max', 'budget_ingrid',
+    'area_max', 'area_ingrid', 'start_date', 'end_date', 'status', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_EXPENSES]: [
+    'id', 'date', 'month_key', 'title', 'main_category', 'sub_category',
+    'unit', 'allocation_key', 'share_max', 'vendor', 'invoice_no', 'amount',
+    'status', 'paid_by', 'funding_source', 'loan_id', 'due_date', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_CATEGORIES]: [
+    'id', 'main_category', 'sub_category', 'sort_order'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_KEYS]: [
+    'id', 'name', 'share_max', 'basis', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_SETTLEMENTS]: [
+    'id', 'date', 'month_key', 'from_person', 'amount', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.LOANS]: [
+    'id', 'title', 'loan_type', 'lender', 'amount', 'interest_rate',
+    'rate_type', 'fixed_until', 'term_months', 'monthly_rate',
+    'first_rate_month', 'commitment_fee_rate', 'commitment_free_months',
+    'share_max', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.LOAN_EVENTS]: [
+    'id', 'loan_id', 'date', 'month_key', 'event_type', 'amount',
+    'interest_rate', 'monthly_rate', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS)
 };
 
 const DATE_FIELDS = {
   date: true,
   start_date: true,
-  end_date: true
+  end_date: true,
+  due_date: true
 };
 
 const MONTH_FIELDS = {
   month_key: true,
   start_month: true,
-  end_month: true
+  end_month: true,
+  fixed_until: true,
+  first_rate_month: true
 };
 
 const TIMESTAMP_FIELDS = {
@@ -163,7 +213,11 @@ function doPost(e) {
       throw new Error('unauthorized');
     }
     if (action === 'getall') {
-      return jsonResponse({ success: true, version: API_VERSION, data: getAllDataCached_() });
+      return jsonResponse({ success: true, version: API_VERSION, data: dataForAuth_(auth, getAllDataCached_()) });
+    }
+    // Hausbau is private to its owner (see Hausbau.gs).
+    if (action.indexOf('hausbau') === 0) {
+      assertHausbauAccess_(auth);
     }
 
     // Every write invalidates the getAll cache and sends the fresh data back,
@@ -340,6 +394,18 @@ function doPost(e) {
           break;
 
         /* ================================================================== */
+        /* HAUSBAU                                                            */
+        /* ================================================================== */
+
+        case 'hausbausave':
+          result = saveHausbauRecord_(payload, auth);
+          break;
+
+        case 'hausbaudelete':
+          result = deleteHausbauRecord_(payload);
+          break;
+
+        /* ================================================================== */
 
         default:
           return {
@@ -361,7 +427,7 @@ function doPost(e) {
     });
 
     if (response.success) {
-      response.data = getAllDataCached_();
+      response.data = dataForAuth_(auth, getAllDataCached_());
     }
 
     return jsonResponse(response);
@@ -380,7 +446,8 @@ function getAllData_() {
     categories: readSheetObjects_(SHEETS.CATEGORIES),
     fixedCosts: readSheetObjects_(SHEETS.FIXED_COSTS),
     tasks: readSheetObjects_(SHEETS.TASKS),
-    shoppingList: readSheetObjects_(SHEETS.SHOPPING)
+    shoppingList: readSheetObjects_(SHEETS.SHOPPING),
+    hausbau: getHausbauData_()
   };
 }
 
