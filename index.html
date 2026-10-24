@@ -26,6 +26,7 @@
   <script defer src="config.js"></script>
   <script defer src="auth.js"></script>
   <script defer src="hausbau.js"></script>
+  <script defer src="categories.js"></script>
   <script defer src="app.js"></script>
 </head>
 
@@ -294,18 +295,29 @@
         id="panel-dashboard"
       >
 
-        <div class="hero-grid">
+        <div class="hero-grid hero-grid-two">
 
           <div class="hero-card gradient-card">
-            <div class="hero-label">
-              Verfügbar im Analysemonat
+            <div
+              class="hero-label"
+              id="heroAvailableLabel"
+            >
+              Im Analysemonat noch frei
             </div>
 
             <div
               class="hero-value"
               id="heroAvailable"
             >
-              0,00 €
+              0 €
+            </div>
+
+            <div
+              class="spend-bar"
+              aria-hidden="true"
+            >
+              <span id="heroSpendFill"></span>
+              <i id="heroMonthMarker"></i>
             </div>
 
             <div
@@ -317,35 +329,18 @@
           </div>
 
           <div class="hero-card">
-            <div class="hero-label">
-              Fixkosten
-            </div>
-
             <div
-              class="hero-value"
-              id="heroFixedCosts"
+              class="hero-label"
+              id="heroPeerTitle"
             >
-              0,00 €
-            </div>
-
-            <div
-              class="hero-sub"
-              id="heroFixedCostsSub"
-            >
-              Analysemonat
-            </div>
-          </div>
-
-          <div class="hero-card">
-            <div class="hero-label">
-              Saldo anderer Nutzer
+              Saldo
             </div>
 
             <div
               class="hero-value"
               id="heroPeerBalance"
             >
-              0,00 €
+              0 €
             </div>
 
             <div
@@ -372,15 +367,42 @@
         <section class="card master-card">
           <div class="card-header">
             <div>
-              <h2>Master Chart</h2>
+              <h2>Verlauf</h2>
               <p>
-                Einkommen, totale Kosten, Fixkosten und variable
-                Kosten über Zeit
+                Einnahmen, Ausgaben gesamt, Fixkosten und variable
+                Kosten pro Monat
               </p>
             </div>
           </div>
 
           <canvas id="masterChart"></canvas>
+        </section>
+
+        <section
+          class="card trend-card"
+          id="categoryTrendCard"
+        >
+          <div class="card-header">
+            <div>
+              <h2>Kategorie im Verlauf</h2>
+              <p>
+                Eine Kategorie über den gewählten Zeitraum, inkl.
+                Fixkosten und Urlaub. Tipp: Balken in
+                „Kostenaufteilung pro Kategorie“ antippen.
+              </p>
+            </div>
+            <label class="trend-select">
+              <span class="sr-only">Kategorie</span>
+              <select id="categoryTrendSelect"></select>
+            </label>
+          </div>
+
+          <div
+            class="trend-stats"
+            id="categoryTrendStats"
+          ></div>
+
+          <canvas id="categoryTrendChart"></canvas>
         </section>
 
         <div class="chart-grid">
@@ -2327,6 +2349,12 @@
           </section>
 
         </div>
+
+        <section
+          class="card"
+          id="categoryMigrationCard"
+          hidden
+        ></section>
       </section>
 
       <!-- =====================================================

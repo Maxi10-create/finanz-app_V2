@@ -62,7 +62,7 @@ function assertHausbauAccess_(auth) {
   // The read-only backend token is already limited to getAll in doPost.
   // Not 'unauthorized': that word logs the client out, which a normal user must not trigger here.
   if (!canSeeHausbau_(auth) || auth.kind !== 'user') {
-    throw new Error('Kein Zugriff auf Hausbau.');
+    throw new Error('Kein Zugriff auf diesen Bereich.');
   }
 }
 
