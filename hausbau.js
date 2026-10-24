@@ -322,6 +322,48 @@
     }).filter(Boolean);
   }
 
+  /** Subsidy conditions due within this many days show up as a reminder. */
+  const CONDITION_REMINDER_DAYS = 60;
+
+  function dueConditions() {
+    const today = app().todayDate();
+    const limit = new Date();
+    limit.setDate(limit.getDate() + CONDITION_REMINDER_DAYS);
+    const limitKey = `${limit.getFullYear()}-${String(limit.getMonth() + 1).padStart(2, "0")}-${String(limit.getDate()).padStart(2, "0")}`;
+    return alive(data()?.loans)
+      .filter((loan) => loan.conditions && loan.conditions_due && loan.conditions_due <= limitKey)
+      .map((loan) => ({ loan, overdue: loan.conditions_due < today }));
+  }
+
+  function conditionsRow(loan) {
+    if (!loan.conditions) return "";
+    const overdue = loan.conditions_due && loan.conditions_due < app().todayDate();
+    return `<tr><td>Auflagen</td><td class="num${overdue ? " hb-overdue" : ""}">${esc(loan.conditions)}${loan.conditions_due ? ` · bis ${esc(app().formatGermanDate(loan.conditions_due))}` : ""}</td></tr>`;
+  }
+
+  /** This month's loan payment and the part of it that repays debt (builds wealth). */
+  function currentLoanSplit() {
+    const month = thisMonth();
+    return creditLoans().reduce((total, loan) => {
+      const row = loanSchedule(loan).find((entry) => entry.month === month);
+      const share = (loan.share_max === "" || loan.share_max == null ? 100 : num(loan.share_max)) / 100;
+      if (!row) return total;
+      total.cost += row.cost * share;
+      total.principal += row.principal * share;
+      return total;
+    }, { cost: 0, principal: 0 });
+  }
+
+  function openExpenseForm() {
+    if (!data()) return;
+    activeSection = "expenses";
+    showSection();
+    resetForm("expense");
+    const form = formFor("expense");
+    form?.scrollIntoView({ behavior: "smooth", block: "start" });
+    form?.elements.title?.focus({ preventScroll: true });
+  }
+
   /* ---- categories ------------------------------------------------------- */
 
   function categoryMap() {
@@ -399,6 +441,12 @@
 
       <div class="hb-section" data-section="overview">
         <div class="hero-grid" id="hbOverviewHero"></div>
+        <section class="card">
+          <div class="card-header"><div><h2>Offene Posten</h2><p>Angebote und beauftragte Leistungen, nach Fälligkeit</p></div></div>
+          <div class="table-scroll"><table class="data-table" id="hbOpenTable">
+            <thead><tr><th>Fällig</th><th>Position</th><th>Firma</th><th>Status</th><th class="num">Betrag</th><th class="num">Dein Anteil</th><th>Aktion</th></tr></thead>
+            <tbody></tbody></table></div>
+        </section>
         <div class="chart-grid">
           <section class="card">
             <div class="card-header"><div><h2>Kosten nach Gewerk</h2><p>Anteil Maximilian und Ingrid</p></div></div>
@@ -522,6 +570,8 @@
               ${field("Provisionsfreie Monate", `<input type="number" name="commitment_free_months" min="0" step="1" />`)}
               ${field("Dein Anteil (%)", `<input type="number" name="share_max" min="0" max="100" step="any" placeholder="100" />`)}
               ${field("Notiz", `<input type="text" name="note" />`)}
+              ${field("Förderauflagen / Nachweise", `<input type="text" name="conditions" placeholder="z. B. Endabrechnung, Hauptwohnsitz-Nachweis" />`)}
+              ${field("Frist für Auflagen", `<input type="date" name="conditions_due" />`)}
               <p class="field-help full">Bei einem Zuschuss für das gemeinsame Projekt trägt „Dein Anteil“ z. B. den Nutzflächen-Anteil. Der Rest gehört Ingrid und erscheint in ihrer Abrechnung.</p>
               ${formButtons("loan", "Speichern")}
             </form>
@@ -825,6 +875,8 @@
     const visible = !!data();
     nav?.classList.toggle("is-hidden", !visible);
     if (dashboardCard) dashboardCard.hidden = !visible;
+    const quickAdd = document.querySelector('#quickAddSelect option[data-hausbau]');
+    if (quickAdd) quickAdd.hidden = !visible;
     if (!visible && panel?.classList.contains("active")) {
       document.querySelector('.nav-btn[data-tab="dashboard"]')?.click();
     }
@@ -892,6 +944,23 @@
       hero("Dein Anteil", eur(maxTotal), num(p.budget_max) ? `Budget ${eur(num(p.budget_max))}` : "inkl. offener Positionen"),
       hero("Anteil Ingrid", eur(ingridTotal), num(p.budget_ingrid) ? `Budget ${eur(num(p.budget_ingrid))}` : "inkl. offener Positionen")
     ].join("");
+
+    const today = app().todayDate();
+    const openRows = open.slice().sort((a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+    document.querySelector("#hbOpenTable tbody").innerHTML = openRows.length
+      ? openRows.map((row) => {
+          const overdue = row.due_date && row.due_date < today;
+          return `<tr>
+            <td class="${overdue ? "hb-overdue" : ""}">${row.due_date ? esc(app().formatGermanDate(row.due_date)) : "—"}${overdue ? " (überfällig)" : ""}</td>
+            <td>${esc(row.title)}</td>
+            <td>${esc(row.vendor || "—")}</td>
+            <td><span class="pill">${esc(STATUS[row.status] || "")}</span></td>
+            <td class="num">${eur(num(row.amount))}</td>
+            <td class="num">${eur(expenseShares(row).max)}</td>
+            <td>${rowActions("expense", row.id)}</td>
+          </tr>`;
+        }).join("")
+      : empty(7, "Keine offenen Posten");
 
     const byCategory = new Map();
     rows.forEach((row) => {
@@ -1047,7 +1116,7 @@
     const grantTotal = grants().reduce((sum, loan) => sum + grantReceived(loan), 0);
     document.getElementById("hbLoanHero").innerHTML = [
       hero("Offene Restschuld", eur(totalBalance), `${loans.length} Kredit(e)`),
-      hero("Monatliche Belastung", eur(currentCost), "zählt zu deinen Fixkosten"),
+      hero("Monatliche Belastung", eur(currentCost), `zählt zu deinen Fixkosten · davon Tilgung ${eur(currentLoanSplit().principal)} (Vermögensaufbau)`),
       hero("Bisher getilgt", eur(principalPaid), `Zinsen bisher ${eur(interestPaid)}`),
       hero("Zuschüsse erhalten", eur(grantTotal), `${grants().length} Zuschuss/Zuschüsse`)
     ].join("");
@@ -1070,6 +1139,7 @@
           <tr><td>Restschuld Ende Zinsbindung</td><td class="num">${summary.balanceAtFixedEnd === null ? "—" : eur(summary.balanceAtFixedEnd)}</td></tr>
           <tr><td>Abbezahlt / Restlaufzeit</td><td class="num">${summary.payoffMonth ? `${monthLabel(summary.payoffMonth)} · ${summary.remainingMonths} Monate` : "Erste Rate und Rate hinterlegen"}</td></tr>
           <tr><td>Zinsen bis Laufzeitende (Plan)</td><td class="num">${eur(summary.interestRemaining)}</td></tr>
+          ${conditionsRow(loan)}
         </tbody></table></div>
         <canvas id="hbLoanChart_${esc(loan.id)}"></canvas>
         <div class="form-grid compact-form">
@@ -1086,6 +1156,7 @@
         <div class="table-scroll"><table class="data-table"><tbody>
           <tr><td>Zugesagt</td><td class="num">${eur(num(loan.amount))}</td></tr>
           <tr><td>Erhalten</td><td class="num">${eur(grantReceived(loan))}</td></tr>
+          ${conditionsRow(loan)}
         </tbody></table></div>
       </section>`).join("");
 
@@ -1142,6 +1213,8 @@
     const budget = num(project().total_budget);
     const balance = creditLoans().reduce((sum, loan) => sum + loanSummary(loan).balance, 0);
     const ingrid = ingridBalance().balance;
+    const split = currentLoanSplit();
+    const reminders = dueConditions();
     card.innerHTML = `
       <div class="card-header">
         <div><h2>Hausbau</h2><p>Separat, nicht in den Monatskosten enthalten (nur die Kreditrate zählt)</p></div>
@@ -1151,7 +1224,9 @@
         ${hero("Dein Anteil", eur(mine), "inkl. offener Positionen")}
         ${hero("Offene Restschuld", eur(balance), "deine Kredite")}
         ${hero(ingrid >= 0 ? "Ingrid schuldet dir" : "Du schuldest Ingrid", eur(Math.abs(ingrid)), "Ausgleichssaldo")}
-      </div>`;
+        ${hero("Kreditrate diesen Monat", eur(split.cost), `davon Tilgung ${eur(split.principal)} = Vermögensaufbau`)}
+      </div>
+      ${reminders.length ? `<div class="alert warning">${reminders.map(({ loan, overdue }) => `${overdue ? "Überfällig" : "Bald fällig"}: ${esc(loan.title)} – ${esc(loan.conditions)} bis ${esc(app().formatGermanDate(loan.conditions_due))}`).join("<br>")}</div>` : ""}`;
   }
 
   /* ---- statement for Ingrid (printed via the browser, free) -------------- */
@@ -1188,5 +1263,5 @@
     win.print();
   }
 
-  window.Hausbau = { sync, render, renderDashboardCard, loanFixedCostRows, loanSchedule, ingridBalance };
+  window.Hausbau = { sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance };
 })();

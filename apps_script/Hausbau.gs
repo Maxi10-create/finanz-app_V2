@@ -47,8 +47,15 @@ function hausbauOwnerName_() {
 function canSeeHausbau_(auth) {
   if (!auth) return false;
   if (auth.kind === 'service') return true;
-  return auth.kind === 'user' &&
-    normalizePersonName_(auth.user && auth.user.display_name) === hausbauOwnerName_();
+  if (auth.kind !== 'user' || !auth.user) return false;
+  // Login names are typed by hand in the Security menu ("Maximilian Hofer", "Hofer Maximilian",
+  // "Maximilian" ...), so match on the first name as well as the exact name.
+  const owner = hausbauOwnerName_();
+  const name = normalizePersonName_(auth.user.display_name);
+  const firstName = owner.split(' ')[0].toLowerCase();
+  return name === owner ||
+    String(auth.user.display_name || '').toLowerCase().split(/\s+/).indexOf(firstName) !== -1 ||
+    String(auth.user.user_key || '').toLowerCase() === firstName;
 }
 
 function assertHausbauAccess_(auth) {

@@ -270,7 +270,19 @@
           Finanzdashboard – Maximilian Hofer
         </h1>
 
-        <div id="messageBox"></div>
+        <div class="topbar-actions">
+          <select id="quickAddSelect" aria-label="Neuer Eintrag">
+            <option value="">+ Neu</option>
+            <option value="transaction">Haushaltsbuchung</option>
+            <option value="income">Einnahme</option>
+            <option value="fixedCost">Fixkosten</option>
+            <option value="tripExpense">Urlaubsausgabe</option>
+            <option value="hausbau" data-hausbau="1" hidden>Hausbau-Ausgabe</option>
+            <option value="shopping">Einkaufsartikel</option>
+            <option value="task">Aufgabe</option>
+          </select>
+          <div id="messageBox"></div>
+        </div>
       </header>
 
       <!-- =====================================================

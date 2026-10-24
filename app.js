@@ -3166,6 +3166,9 @@
       });
   }
   function getHousingFixedRowsForMonth(month) {
+    // Hausbau loan payments (only for their owner) belong to housing costs too.
+    const loanRows =
+      window.Hausbau?.loanFixedCostRows(month) || [];
     return (state.data.fixedCosts || [])
       .filter((row) => !isDeleted(row))
       .filter((row) => {
@@ -3192,7 +3195,8 @@
           return false;
         }
         return true;
-      });
+      })
+      .concat(loanRows);
   }
   function getCombinedHousingCategoryMapForMonth(month) {
     const values = new Map();
@@ -5793,6 +5797,33 @@
       });
     });
   }
+  // "+ Neu": jumps to the right tab and form for any kind of entry.
+  const QUICK_ADD_TARGETS = {
+    transaction: ["bookings", "transactionForm"],
+    income: ["zentrale", "incomeForm"],
+    fixedCost: ["zentrale", "fixedCostForm"],
+    tripExpense: ["urlaub", "tripExpenseForm"],
+    hausbau: ["hausbau", null],
+    shopping: ["household", "shoppingItemForm"],
+    task: ["household", "householdTaskForm"]
+  };
+  function bindQuickAdd() {
+    const select = document.getElementById("quickAddSelect");
+    select?.addEventListener("change", () => {
+      const target = QUICK_ADD_TARGETS[select.value];
+      select.value = "";
+      if (!target) return;
+      els.tabs?.querySelector(`.nav-btn[data-tab="${target[0]}"]`)?.click();
+      if (target[0] === "hausbau") {
+        window.Hausbau?.openExpenseForm();
+        return;
+      }
+      const form = document.getElementById(target[1]);
+      if (!form) return;
+      form.scrollIntoView({ behavior: "smooth", block: "start" });
+      form.querySelector("input:not([type=hidden]), select, textarea")?.focus({ preventScroll: true });
+    });
+  }
   function bindFilters() {
     [
       els.filterStartMonth,
@@ -6069,6 +6100,16 @@
       silentSuccess: true
     });
   }
+  // The web app and the Apps Script backend are deployed separately; say so when they drift apart.
+  const MIN_BACKEND_VERSION = 11;
+  function warnIfBackendOutdated(version) {
+    const match = /^v(\d+)/.exec(String(version || ""));
+    if (match && Number(match[1]) >= MIN_BACKEND_VERSION) return;
+    showMessage(
+      `Das Backend ist noch auf Version ${version || "unbekannt"}. Bitte in Apps Script Code.gs und Hausbau.gs aktualisieren und eine neue Version bereitstellen, sonst fehlen Hausbau und neue Funktionen.`,
+      "warning"
+    );
+  }
   async function loadAll({
     silentSuccess = false
   } = {}) {
@@ -6089,6 +6130,7 @@
         await apiGet("getAll");
       applyData(result.data);
       saveDataCache(result.data);
+      warnIfBackendOutdated(result.version);
       if (!silentSuccess) {
         showMessage(
           "Daten erfolgreich geladen.",
@@ -6121,6 +6163,7 @@
     bindFilters();
     bindTableActions();
     bindShoppingListActions();
+    bindQuickAdd();
     wireCategorySelects();
     resetFormUi("transaction");
     resetFormUi("trip");
