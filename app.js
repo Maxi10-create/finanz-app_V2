@@ -411,7 +411,9 @@
       shoppingList: (input.shoppingList || []).map((row, index) => ({
         ...normalizeRecordNames(row),
         _clientKey: `shopping_${index}_${row.id || ""}`
-      }))
+      })),
+      // Only present for the Hausbau owner; rendered by hausbau.js.
+      hausbau: input.hausbau || null
     };
   }
   function buildApiUrl(baseUrl, params = {}) {
@@ -1227,6 +1229,9 @@
     return value;
   }
   function activeFixedCostsForMonth(month) {
+    // Hausbau loan payments count as fixed costs; building costs never do.
+    const loanRows =
+      window.Hausbau?.loanFixedCostRows(month) || [];
     return (state.data.fixedCosts || [])
       .filter(isVisibleFixedCost)
       .filter((row) => {
@@ -1251,7 +1256,8 @@
           return false;
         }
         return true;
-      });
+      })
+      .concat(loanRows);
   }
   function fixedCostsMonthlyTotal(month) {
     return activeFixedCostsForMonth(month)
@@ -5460,6 +5466,7 @@
     renderCategoriesTable();
     renderFixedCostsTable();
     renderIncomeTable();
+    window.Hausbau?.render();
     updateTransactionFormVisibility();
     updateTaskRepeatFields();
   }
@@ -6073,6 +6080,24 @@
       console.error(error);
     }
   }
+  // Small bridge for hausbau.js, which lives in its own file.
+  window.FinanceApp = {
+    get data() {
+      return state.data;
+    },
+    state,
+    apiPost,
+    refreshAfterWrite,
+    ensureChart,
+    showMessage,
+    clearMessage,
+    currency,
+    escapeHtml,
+    formatGermanDate,
+    todayDate,
+    currentMonth,
+    currentUserName
+  };
   window.onUserLoggedIn = onUserLoggedIn;
   window.loadAll = loadAll;
   document.addEventListener(
