@@ -20,17 +20,15 @@
     zuschuss: "Zuschuss erhalten"
   };
   const DEFAULT_AREA = { max: 95, ingrid: 84 };
+  // Same budget blocks as the Umbau Hintersun 8 cockpit, so both show the same numbers.
   const DEFAULT_CATEGORIES = {
-    "Grundstück": ["Kaufpreis", "Vermessung", "Erschließung", "Anschlüsse"],
-    "Kaufneben- & Finanzierungskosten": ["Notar", "Grunderwerbsteuer", "Grundbuch", "Makler", "Bankgebühren", "Schätzung"],
-    "Planung & Genehmigung": ["Architekt", "Statik", "Baubewilligung", "Energieausweis", "Bauaufsicht"],
-    "Rohbau": ["Erdarbeiten", "Fundament/Bodenplatte", "Mauerwerk", "Decken", "Dach"],
-    "Gebäudehülle": ["Fenster", "Türen", "Fassade", "Dämmung"],
-    "Haustechnik": ["Elektro", "Sanitär", "Heizung/Wärmepumpe", "Lüftung", "Photovoltaik"],
-    "Innenausbau": ["Estrich", "Verputz", "Fliesen", "Böden", "Malerarbeiten", "Innentüren", "Stiegen"],
-    "Einrichtung": ["Küche", "Bad-Ausstattung", "Beleuchtung", "Möbel"],
-    "Außenanlagen": ["Garage/Carport", "Zufahrt", "Terrasse", "Garten", "Zaun"],
-    "Sonstiges": ["Baustrom/-wasser", "Bauversicherung", "Container", "Unvorhergesehenes"]
+    "Abbruch & Rohbau": ["Abbruch", "Baumeister/Maurer", "Dach", "Fenster & Türen", "Fassade & Dämmung"],
+    "Wohnung A (EG)": ["Ausbau", "Bad", "Böden", "Elektro", "Sanitär"],
+    "Wohnung B (OG+DG)": ["Ausbau", "Bad", "Böden", "Elektro", "Sanitär"],
+    "Carport & Außenanlagen": ["Carport", "Zufahrt", "Garten", "Zaun"],
+    "Planung & Technik": ["Architekt", "Statik", "Haustechnik-Planung", "Heizung/Wärmepumpe", "Photovoltaik", "Elektro"],
+    "Innenausbau & Küche": ["Küche", "Innentüren", "Malerarbeiten", "Böden", "Stiegen"],
+    "Bürokratie & Gebühren": ["Administration", "Gemeinde & Genehmigung", "Notar & Grundbuch", "Gebühren", "Bauversicherung"]
   };
   const MAX_LOAN_MONTHS = 600;
 
@@ -1263,5 +1261,5 @@
     win.print();
   }
 
-  window.Hausbau = { sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance };
+  window.Hausbau = { sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance, areaShareMax };
 })();
