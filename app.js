@@ -73,8 +73,12 @@
     categoryCompareTableBody: document.querySelector("#categoryCompareTable tbody"),
     heroAvailable: document.getElementById("heroAvailable"),
     heroAvailableSub: document.getElementById("heroAvailableSub"),
-    heroFixedCosts: document.getElementById("heroFixedCosts"),
-    heroFixedCostsSub: document.getElementById("heroFixedCostsSub"),
+    heroAvailableLabel: document.getElementById("heroAvailableLabel"),
+    heroSpendFill: document.getElementById("heroSpendFill"),
+    heroMonthMarker: document.getElementById("heroMonthMarker"),
+    heroPeerTitle: document.getElementById("heroPeerTitle"),
+    categoryTrendSelect: document.getElementById("categoryTrendSelect"),
+    categoryTrendStats: document.getElementById("categoryTrendStats"),
     heroPeerBalance: document.getElementById("heroPeerBalance"),
     heroPeerLabel: document.getElementById("heroPeerLabel"),
     bookingMainCategory: document.getElementById("bookingMainCategory"),
@@ -170,7 +174,57 @@
       style: "currency",
       currency: (typeof CONFIG !== "undefined" && CONFIG.DEFAULT_CURRENCY) || "EUR"
     }).format(Number(value || 0));
-  const percent = (value) => `${Number(value || 0).toFixed(1)} %`;
+  const percent = (value) =>
+    `${Number(value || 0).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
+  // Big numbers in cards read calmer without cents; tables keep them.
+  const currencyShort = (value) =>
+    new Intl.NumberFormat("de-DE", {
+      style: "currency",
+      currency: (typeof CONFIG !== "undefined" && CONFIG.DEFAULT_CURRENCY) || "EUR",
+      maximumFractionDigits: 0
+    }).format(Number(value || 0));
+  const MONTH_NAMES = ["Jänner", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+  const MONTH_SHORT = ["Jän", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+  function monthLabel(month, short = false) {
+    const match = /^(\d{4})-(\d{2})$/.exec(String(month || ""));
+    if (!match) return String(month || "");
+    const index = Number(match[2]) - 1;
+    return short
+      ? `${MONTH_SHORT[index]} ${match[1].slice(2)}`
+      : `${MONTH_NAMES[index]} ${match[1]}`;
+  }
+  function shiftMonth(month, delta) {
+    const [year, mon] = String(month).split("-").map(Number);
+    const date = new Date(year, mon - 1 + delta, 1);
+    return localMonthKey(date);
+  }
+  // One fixed colour per main category, the same in every chart.
+  const CATEGORY_COLORS = {
+    "Wohnen": "#5b8def",
+    "Lebensmittel & Haushalt": "#2bb3a3",
+    "Alltag": "#2bb3a3",
+    "Mobilität": "#f2994a",
+    "Versicherungen": "#8fa3bf",
+    "Gesundheit & Pflege": "#5cc17a",
+    "Abos & Kommunikation": "#e5c04b",
+    "Essen & Ausgehen": "#e86fa4",
+    "Freizeit & Hobby": "#9b7bea",
+    "Freizeit": "#9b7bea",
+    "Shopping": "#4fc3e8",
+    "Geschenke & Spenden": "#f07a6a",
+    "Finanzen & Gebühren": "#a0a8b8",
+    "Sonstiges": "#7c8aa5",
+    "Urlaub": "#38c7b0"
+  };
+  const EXTRA_COLORS = ["#c38bff", "#ffb86b", "#6be0c9", "#ff8fb1", "#9fd36b", "#79a8ff", "#e0a3ff", "#ffd36b"];
+  function categoryColor(name) {
+    if (CATEGORY_COLORS[name]) return CATEGORY_COLORS[name];
+    let hash = 0;
+    String(name || "").split("").forEach((ch) => {
+      hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+    });
+    return EXTRA_COLORS[hash % EXTRA_COLORS.length];
+  }
   const escapeHtml = (value) =>
     String(value ?? "").replace(/[&<>"']/g, (character) => ({
       "&": "&amp;",
@@ -981,6 +1035,8 @@
   function isExpenseBooking(row) {
     return !isSettlement(row);
   }
+  // Shared bookings in these main categories are always visible to both people.
+  const SHARED_MAIN_CATEGORIES = ["Wohnen", "Alltag", "Lebensmittel & Haushalt"];
   function isVisibleTransaction(row) {
     if (!row || isDeleted(row)) return false;
     const me = currentUserName();
@@ -1000,7 +1056,7 @@
       return false;
     }
     if (
-      ["Wohnen", "Alltag"].includes(
+      SHARED_MAIN_CATEGORIES.includes(
         String(row.main_category || "")
       )
     ) {
@@ -2254,6 +2310,23 @@
     config.options.maintainAspectRatio = config.options.maintainAspectRatio ?? false;
     const labels = (config.data && config.data.labels) || [];
     const isMonthAxis = labels.length > 0 && labels.every((label) => /^\d{4}-\d{2}$/.test(String(label)));
+    if (isMonthAxis) {
+      // "2026-10" reads as "Okt 26" on the axis and "Oktober 2026" in the tooltip.
+      config.options.scales = config.options.scales || {};
+      config.options.scales.x = config.options.scales.x || {};
+      config.options.scales.x.ticks = Object.assign({}, config.options.scales.x.ticks, {
+        callback(value) {
+          return monthLabel(this.getLabelForValue(value), true);
+        }
+      });
+      config.options.plugins = config.options.plugins || {};
+      config.options.plugins.tooltip = config.options.plugins.tooltip || {};
+      config.options.plugins.tooltip.callbacks = Object.assign({}, config.options.plugins.tooltip.callbacks, {
+        title(items) {
+          return items.length ? monthLabel(items[0].label) : "";
+        }
+      });
+    }
     if (config.type === "line") {
       const now = currentMonth();
       (config.data.datasets || []).forEach((dataset) => {
@@ -2302,7 +2375,7 @@
     }
     return analysisRangeMonths();
   }
-  function getDashboardMetrics(month) {
+  function getDashboardMetrics(month, { light = false } = {}) {
     const txRows =
       filteredTransactionsForMonth(month);
     const tripRows =
@@ -2359,123 +2432,147 @@
         income
           ? totalExpenses / income * 100
           : 0,
+      // Comparisons with earlier months do not need the (slower) balance with the other person.
       peerBalanceMonth:
-        calculatePeerBalanceForMonth(month),
+        light ? 0 : calculatePeerBalanceForMonth(month),
       peerBalanceOpen:
-        calculateOpenPeerBalanceUntil(month)
+        light ? 0 : calculateOpenPeerBalanceUntil(month)
     };
   }
   function renderKpis(metrics) {
     const percentMode = isPercentMode();
+    const month = metrics.month;
+    const previous = getDashboardMetrics(shiftMonth(month, -1), { light: true });
+    // Average of the six months before, counting only months with income.
+    const history = [1, 2, 3, 4, 5, 6]
+      .map((n) => getDashboardMetrics(shiftMonth(month, -n), { light: true }))
+      .filter((m) => m.income > 0);
+    const averageAvailable = history.length
+      ? history.reduce((sum, m) => sum + m.available, 0) / history.length
+      : null;
+    setText(els.heroAvailableLabel, `${monthLabel(month).split(" ")[0]}: noch frei`);
     if (els.heroAvailable) {
       els.heroAvailable.textContent =
         percentMode
-          ? percent(
-              toPercent(
-                metrics.available,
-                metrics.income
-              )
-            )
-          : currency(metrics.available);
+          ? percent(toPercent(metrics.available, metrics.income))
+          : currencyShort(metrics.available);
+      els.heroAvailable.classList.toggle("is-negative", metrics.available < 0);
+    }
+    const spent = metrics.income ? metrics.totalExpenses / metrics.income * 100 : 0;
+    if (els.heroSpendFill) {
+      els.heroSpendFill.style.width = `${clamp(spent, 0, 100)}%`;
+      els.heroSpendFill.classList.toggle("is-over", spent > 100);
+    }
+    let monthShare = null;
+    if (month === currentMonth()) {
+      const now = new Date();
+      const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      monthShare = now.getDate() / days * 100;
+    }
+    if (els.heroMonthMarker) {
+      els.heroMonthMarker.hidden = monthShare == null;
+      if (monthShare != null) els.heroMonthMarker.style.left = `${monthShare}%`;
     }
     if (els.heroAvailableSub) {
-      els.heroAvailableSub.textContent =
-        metrics.available >= 0
-          ? "Positiver Monatsüberschuss"
-          : "Monat aktuell negativ";
+      const parts = [];
+      parts.push(
+        metrics.income
+          ? `${percent(spent)} der Einnahmen ausgegeben` +
+            (monthShare != null ? `, ${Math.round(monthShare)} % des Monats vorbei` : "")
+          : "Noch keine Einnahmen erfasst"
+      );
+      if (averageAvailable != null) {
+        const diff = metrics.available - averageAvailable;
+        parts.push(
+          Math.abs(diff) < 1
+            ? "genau wie dein Schnitt"
+            : `${currencyShort(Math.abs(diff))} ${diff > 0 ? "besser" : "schlechter"} als dein 6-Monats-Schnitt`
+        );
+      }
+      els.heroAvailableSub.textContent = parts.join(" · ");
     }
-    if (els.heroFixedCosts) {
-      els.heroFixedCosts.textContent =
-        percentMode
-          ? percent(metrics.fixedRate)
-          : currency(metrics.fixedCosts);
-    }
-    if (els.heroFixedCostsSub) {
-      els.heroFixedCostsSub.textContent =
-        percentMode
-          ? "Fixkostenquote bezogen auf Einkommen"
-          : "Monatliche Fixkostenbelastung";
-    }
+    const other = otherUserName().split(" ")[0];
+    const open = metrics.peerBalanceOpen;
+    setText(
+      els.heroPeerTitle,
+      Math.abs(open) < 0.005
+        ? `Mit ${other} ausgeglichen`
+        : open > 0
+          ? `${other} schuldet dir`
+          : `Du schuldest ${other}`
+    );
     if (els.heroPeerBalance) {
-      els.heroPeerBalance.textContent =
-        currency(metrics.peerBalanceOpen);
+      els.heroPeerBalance.textContent = currency(Math.abs(open));
     }
     if (els.heroPeerLabel) {
+      const monthBalance = metrics.peerBalanceMonth;
       els.heroPeerLabel.textContent =
-        `Offener Saldo ${otherUserName()}`;
+        Math.abs(monthBalance) < 0.005
+          ? `Im ${monthLabel(month).split(" ")[0]} keine geteilten Ausgaben`
+          : `Davon im ${monthLabel(month).split(" ")[0]}: ${monthBalance > 0 ? "+" : "–"}${currency(Math.abs(monthBalance))}`;
     }
     if (els.kpiGrid) {
-      const items = percentMode
-        ? [
-            [
-              "Einnahmen",
-              currency(metrics.income),
-              "Monatliche Einnahmen"
-            ],
-            [
-              "Ausgaben gesamt",
-              percent(metrics.expenseRate),
-              "Haushalt + Urlaub + Fixkosten"
-            ],
-            [
-              "Fixkosten",
-              percent(metrics.fixedRate),
-              "Fixkostenquote"
-            ],
-            [
-              "Variable Kosten",
-              percent(metrics.variableRate),
-              "Haushalt + Urlaub"
-            ],
-            [
-              "Sparquote",
-              percent(metrics.savingsRate),
-              "Einnahmen minus Ausgaben"
-            ]
-          ]
-        : [
-            [
-              "Einnahmen",
-              currency(metrics.income),
-              "Monatliche Einnahmen"
-            ],
-            [
-              "Ausgaben gesamt",
-              currency(metrics.totalExpenses),
-              "Haushalt + Urlaub + Fixkosten"
-            ],
-            [
-              "Fixkosten",
-              currency(metrics.fixedCosts),
-              "Monatliche Fixkosten"
-            ],
-            [
-              "Variable Kosten",
-              currency(metrics.variableCosts),
-              "Haushalt + Urlaub"
-            ],
-            [
-              "Sparquote",
-              percent(metrics.savingsRate),
-              "Einnahmen minus Ausgaben"
-            ]
-          ];
+      // Change against the previous month; for costs a decrease is good.
+      const delta = (now, before, goodWhenUp) => {
+        if (!before) return { text: "kein Vormonat", tone: "neutral" };
+        const change = (now - before) / Math.abs(before) * 100;
+        if (Math.abs(change) < 0.5) return { text: "wie Vormonat", tone: "neutral" };
+        const up = change > 0;
+        return {
+          text: `${up ? "▲" : "▼"} ${up ? "+" : "–"}${Math.abs(change).toFixed(0)} % zum Vormonat`,
+          tone: up === goodWhenUp ? "good" : "bad"
+        };
+      };
+      const points = (now, before) => {
+        if (!previous.income) return { text: "kein Vormonat", tone: "neutral" };
+        const change = now - before;
+        if (Math.abs(change) < 0.05) return { text: "wie Vormonat", tone: "neutral" };
+        return {
+          text: `${change > 0 ? "▲ +" : "▼ –"}${Math.abs(change).toLocaleString("de-DE", { maximumFractionDigits: 1 })} Punkte`,
+          tone: change > 0 ? "good" : "bad"
+        };
+      };
+      const fixedShare = metrics.totalExpenses ? metrics.fixedCosts / metrics.totalExpenses * 100 : 0;
+      const items = [
+        {
+          label: "Einnahmen",
+          value: currencyShort(metrics.income),
+          delta: delta(metrics.income, previous.income, true)
+        },
+        {
+          label: "Ausgaben",
+          value: percentMode ? percent(metrics.expenseRate) : currencyShort(metrics.totalExpenses),
+          delta: delta(metrics.totalExpenses, previous.totalExpenses, false),
+          split: `fix ${currencyShort(metrics.fixedCosts)} · variabel ${currencyShort(metrics.variableCosts)}`,
+          fixedShare
+        },
+        {
+          label: "Fixkosten",
+          value: percentMode ? percent(metrics.fixedRate) : currencyShort(metrics.fixedCosts),
+          delta: delta(metrics.fixedCosts, previous.fixedCosts, false),
+          sub: `${activeFixedCostsForMonth(month).length} Positionen`
+        },
+        {
+          label: "Sparquote",
+          value: percent(metrics.savingsRate),
+          delta: points(metrics.savingsRate, previous.savingsRate),
+          sub: "Einnahmen minus Ausgaben"
+        }
+      ];
       els.kpiGrid.innerHTML = items
-        .map(([label, value, sub]) => {
-          return `
+        .map((item) => `
             <div class="kpi-card">
-              <div class="kpi-label">
-                ${escapeHtml(label)}
-              </div>
-              <div class="kpi-value">
-                ${escapeHtml(value)}
-              </div>
-              <div class="kpi-sub">
-                ${escapeHtml(sub)}
-              </div>
+              <div class="kpi-label">${escapeHtml(item.label)}</div>
+              <div class="kpi-value">${escapeHtml(item.value)}</div>
+              <div class="kpi-delta is-${item.delta.tone}">${escapeHtml(item.delta.text)}</div>
+              ${item.split != null ? `
+                <div class="kpi-split" aria-hidden="true">
+                  <span style="width:${clamp(item.fixedShare, 0, 100)}%"></span>
+                </div>
+                <div class="kpi-sub">${escapeHtml(item.split)}</div>` : ""}
+              ${item.sub ? `<div class="kpi-sub">${escapeHtml(item.sub)}</div>` : ""}
             </div>
-          `;
-        })
+          `)
         .join("");
     }
     if (els.monthlySummary) {
@@ -2592,7 +2689,7 @@
     const datasets = percentMode
       ? [
           {
-            label: "Totale Kosten",
+            label: "Ausgaben gesamt",
             data: totalSeries,
             borderColor: "#4f7cff",
             backgroundColor: "rgba(79,124,255,.15)",
@@ -2626,7 +2723,7 @@
             tension: 0.25
           },
           {
-            label: "Totale Kosten",
+            label: "Ausgaben gesamt",
             data: totalSeries,
             borderColor: "#4f7cff",
             backgroundColor: "rgba(79,124,255,.15)",
@@ -2726,11 +2823,11 @@
                     : value;
                 }),
               backgroundColor:
-                "rgba(255,190,61,.82)"
+                [...fixedMap.keys()].map(categoryColor)
             }
           ]
         },
-        options: chartOptions(false, valueMode)
+        options: withoutLegend(chartOptions(false, valueMode))
       }
     );
     const compositionRows = [];
@@ -2776,11 +2873,11 @@
                     : value;
                 }),
               backgroundColor:
-                "rgba(79,124,255,.82)"
+                [...variableMap.keys()].map(categoryColor)
             }
           ]
         },
-        options: chartOptions(false, valueMode)
+        options: withoutLegend(chartOptions(false, valueMode))
       }
     );
     const variableRows =
@@ -2822,14 +2919,181 @@
                     )
                   : value;
               }),
-              backgroundColor:
-                "rgba(97,201,255,.82)"
+              backgroundColor: selectedMainCategory
+                ? hexToRgba(categoryColor(selectedMainCategory), 0.85)
+                : categoryData.map(([label]) => categoryColor(label))
             }
           ]
         },
-        options: chartOptions(false, valueMode)
+        options: Object.assign(withoutLegend(chartOptions(false, valueMode)), {
+          // Tapping a bar shows that category over the months.
+          onClick(event, elements) {
+            const index = elements?.[0]?.index;
+            if (index == null) return;
+            const label = categoryData[index][0];
+            if (selectedMainCategory) {
+              selectCategoryTrend(selectedMainCategory, label, { scroll: true });
+            } else {
+              selectCategoryTrend(label, "", { scroll: true });
+            }
+          },
+          onHover(event, elements) {
+            event.native.target.style.cursor = elements.length ? "pointer" : "default";
+          }
+        })
       }
     );
+  }
+  // "Kategorie im Verlauf": one main or sub category over the chosen months,
+  // with bookings, trip expenses and fixed costs (your share) added up.
+  function categoryTrendOptions() {
+    const map = new Map();
+    const add = (main, sub) => {
+      if (!main) return;
+      if (!map.has(main)) map.set(main, new Set());
+      if (sub) map.get(main).add(sub);
+    };
+    (state.data.transactions || [])
+      .filter(isVisibleTransaction)
+      .filter(isExpenseBooking)
+      .forEach((row) => add(row.main_category, row.sub_category));
+    (state.data.tripExpenses || [])
+      .filter(isVisibleTripExpense)
+      .forEach((row) => add(row.main_category, row.sub_category));
+    (state.data.fixedCosts || [])
+      .filter(isVisibleFixedCost)
+      .forEach((row) => add(row.main_category, row.sub_category));
+    (window.Hausbau?.loanFixedCostRows(currentMonth()) || [])
+      .forEach((row) => add(row.main_category, row.sub_category));
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "de"))
+      .map(([main, subs]) => [main, [...subs].sort((a, b) => a.localeCompare(b, "de"))]);
+  }
+  function categoryTrendValue(main, sub = "") {
+    return JSON.stringify([main, sub]);
+  }
+  function categoryAmountForMonth(month, main, sub) {
+    const matches = (row) =>
+      String(row.main_category || "") === main &&
+      (!sub || String(row.sub_category || "") === sub);
+    const transactions = filteredTransactionsForMonth(month)
+      .filter(matches)
+      .reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
+    const trips = filteredTripExpensesForMonth(month)
+      .filter(matches)
+      .reduce((sum, row) => sum + getVacationCurrentUserAmount(row), 0);
+    const fixed = activeFixedCostsForMonth(month)
+      .filter(matches)
+      .reduce((sum, row) => sum + getUserShareFromAmount(row, normalizeFrequency(row.amount, row.frequency)), 0);
+    return transactions + trips + fixed;
+  }
+  function selectCategoryTrend(main, sub = "", { scroll = false } = {}) {
+    state.categoryTrend = categoryTrendValue(main, sub);
+    renderCategoryTrend();
+    if (scroll) {
+      document.getElementById("categoryTrendCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+  function renderCategoryTrend() {
+    const select = els.categoryTrendSelect;
+    if (!select) return;
+    const options = categoryTrendOptions();
+    const values = new Set();
+    select.innerHTML = options
+      .map(([main, subs]) => {
+        values.add(categoryTrendValue(main));
+        subs.forEach((sub) => values.add(categoryTrendValue(main, sub)));
+        return `
+          <optgroup label="${escapeHtml(main)}">
+            <option value="${escapeHtml(categoryTrendValue(main))}">${escapeHtml(main)} (gesamt)</option>
+            ${subs.map((sub) => `<option value="${escapeHtml(categoryTrendValue(main, sub))}">${escapeHtml(main)} › ${escapeHtml(sub)}</option>`).join("")}
+          </optgroup>`;
+      })
+      .join("");
+    if (!state.categoryTrend || !values.has(state.categoryTrend)) {
+      // Start with the filtered main category, else the biggest one of the analysis month.
+      const filtered = els.filterMainCategory?.value;
+      const month = selectedAnalysisMonth();
+      const biggest = options
+        .map(([main]) => [main, categoryAmountForMonth(month, main, "")])
+        .sort((a, b) => b[1] - a[1])[0];
+      const main = filtered && values.has(categoryTrendValue(filtered)) ? filtered : biggest?.[0];
+      state.categoryTrend = main ? categoryTrendValue(main) : "";
+    }
+    select.value = state.categoryTrend;
+    if (!state.categoryTrend) {
+      if (els.categoryTrendStats) els.categoryTrendStats.innerHTML = "";
+      ensureChart("categoryTrendChart", "categoryTrendChart", { type: "bar", data: { labels: [], datasets: [] }, options: chartOptions(false) });
+      return;
+    }
+    const [main, sub] = JSON.parse(state.categoryTrend);
+    const months = monthRange();
+    const percentMode = isPercentMode();
+    const raw = months.map((month) => categoryAmountForMonth(month, main, sub));
+    const values2 = percentMode
+      ? raw.map((value, index) => toPercent(value, monthlyIncome(months[index])))
+      : raw;
+    const now = currentMonth();
+    const pastIndexes = months.map((m, i) => (m <= now ? i : -1)).filter((i) => i >= 0);
+    const pastRaw = pastIndexes.map((i) => raw[i]);
+    const total = pastRaw.reduce((sum, v) => sum + v, 0);
+    const average = pastRaw.length ? total / pastRaw.length : 0;
+    const averageShown = percentMode
+      ? (pastIndexes.length ? pastIndexes.reduce((sum, i) => sum + values2[i], 0) / pastIndexes.length : 0)
+      : average;
+    let peak = -1;
+    pastIndexes.forEach((i) => {
+      if (peak < 0 || raw[i] > raw[peak]) peak = i;
+    });
+    const analysis = selectedAnalysisMonth();
+    const analysisIndex = months.indexOf(analysis);
+    const analysisValue = analysisIndex >= 0 ? raw[analysisIndex] : categoryAmountForMonth(analysis, main, sub);
+    const versus = average ? (analysisValue - average) / average * 100 : 0;
+    const color = categoryColor(main);
+    if (els.categoryTrendStats) {
+      const stat = (label, value, tone = "") => `
+        <div class="trend-stat">
+          <span>${escapeHtml(label)}</span>
+          <strong class="${tone}">${escapeHtml(value)}</strong>
+        </div>`;
+      els.categoryTrendStats.innerHTML = [
+        stat("Summe im Zeitraum", currency(total)),
+        stat("Ø pro Monat", currency(average)),
+        stat("Höchster Monat", peak >= 0 && raw[peak] > 0 ? `${monthLabel(months[peak], true)}: ${currency(raw[peak])}` : "–"),
+        stat(
+          `${monthLabel(analysis, true)} vs. Ø`,
+          !average ? "–" : Math.abs(versus) < 0.5 ? "±0 %" : `${versus > 0 ? "+" : "–"}${Math.abs(versus).toFixed(0)} %`,
+          average ? (versus > 5 ? "is-bad" : versus < -5 ? "is-good" : "") : ""
+        )
+      ].join("");
+    }
+    ensureChart("categoryTrendChart", "categoryTrendChart", {
+      type: "bar",
+      data: {
+        labels: months,
+        datasets: [
+          {
+            type: "line",
+            label: "Ø pro Monat",
+            data: months.map(() => averageShown),
+            borderColor: "rgba(232,238,248,0.55)",
+            borderDash: [6, 5],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: false,
+            order: 0
+          },
+          {
+            label: sub ? `${main} › ${sub}` : main,
+            data: values2,
+            backgroundColor: months.map((m) => (m === analysis ? color : hexToRgba(color, 0.55))),
+            borderRadius: 6,
+            order: 1
+          }
+        ]
+      },
+      options: chartOptions(false, percentMode ? "percent" : "currency")
+    });
   }
   function renderCategoryTable(rows) {
     if (!els.categoryTableBody) return;
@@ -5432,6 +5696,7 @@
       );
     renderKpis(metrics);
     renderDashboardCharts(metrics);
+    renderCategoryTrend();
     renderCategoryTable(
       metrics.txRows.concat(metrics.tripRows)
     );
@@ -5469,6 +5734,7 @@
     populateTripSelect();
     populateVacationAnalysisSelect();
     window.Hausbau?.sync();
+    window.CategoryMigration?.sync();
     // Only the visible tab is drawn now; the others are drawn when opened.
     Object.keys(TAB_RENDERERS).forEach((tab) => state.dirtyTabs.add(tab));
     renderTab(activeTab());
@@ -5825,6 +6091,15 @@
     });
   }
   function bindFilters() {
+    // Choosing a main category in the sidebar also shows it in "Kategorie im Verlauf".
+    els.filterMainCategory?.addEventListener("change", () => {
+      const main = els.filterMainCategory.value;
+      if (main) state.categoryTrend = categoryTrendValue(main);
+    });
+    els.categoryTrendSelect?.addEventListener("change", () => {
+      state.categoryTrend = els.categoryTrendSelect.value;
+      renderCategoryTrend();
+    });
     [
       els.filterStartMonth,
       els.filterAnalysisMonth,
@@ -5919,6 +6194,11 @@
       }
     });
   }
+  // Bars coloured per category explain themselves; a one-entry legend would show the wrong colour.
+  function withoutLegend(options) {
+    options.plugins = Object.assign({}, options.plugins, { legend: { display: false } });
+    return options;
+  }
   function chartOptions(options = false, legacyMode) {
     let stacked = false;
     let valueMode =
@@ -6000,7 +6280,7 @@
             callback(value) {
               return valueMode === "percent"
                 ? `${value} %`
-                : value;
+                : currencyShort(value);
             }
           },
           grid: {
@@ -6101,12 +6381,12 @@
     });
   }
   // The web app and the Apps Script backend are deployed separately; say so when they drift apart.
-  const MIN_BACKEND_VERSION = 11;
+  const MIN_BACKEND_VERSION = 12;
   function warnIfBackendOutdated(version) {
     const match = /^v(\d+)/.exec(String(version || ""));
     if (match && Number(match[1]) >= MIN_BACKEND_VERSION) return;
     showMessage(
-      `Das Backend ist noch auf Version ${version || "unbekannt"}. Bitte in Apps Script Code.gs und Hausbau.gs aktualisieren und eine neue Version bereitstellen, sonst fehlen Hausbau und neue Funktionen.`,
+      `Das Backend ist noch auf Version ${version || "unbekannt"}. Bitte in Apps Script Code.gs, Hausbau.gs und Categories.gs aktualisieren und eine neue Version bereitstellen, sonst fehlen Hausbau und neue Funktionen.`,
       "warning"
     );
   }

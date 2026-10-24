@@ -1,4 +1,4 @@
-const API_VERSION = 'v11-2026-10-24-hausbau-2';
+const API_VERSION = 'v12-2026-10-24-kategorien';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -216,9 +216,12 @@ function doPost(e) {
     if (action === 'getall') {
       return jsonResponse({ success: true, version: API_VERSION, data: dataForAuth_(auth, getAllDataCached_()) });
     }
-    // Hausbau is private to its owner (see Hausbau.gs).
-    if (action.indexOf('hausbau') === 0) {
+    // Hausbau and the category reorganisation are reserved to the owner (see Hausbau.gs).
+    if (action.indexOf('hausbau') === 0 || action.indexOf('category') === 0) {
       assertHausbauAccess_(auth);
+    }
+    if (action === 'categoryinventory') {
+      return jsonResponse(Object.assign({ success: true, version: API_VERSION }, categoryInventory_()));
     }
 
     // Every write invalidates the getAll cache and sends the fresh data back,
@@ -404,6 +407,10 @@ function doPost(e) {
 
         case 'hausbaudelete':
           result = deleteHausbauRecord_(payload);
+          break;
+
+        case 'categorymigrate':
+          result = migrateCategories_(payload, auth);
           break;
 
         /* ================================================================== */

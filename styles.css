@@ -2074,3 +2074,38 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); 
   color: var(--danger, #e5484d);
   font-weight: 700;
 }
+
+/* Kategorien neu ordnen */
+#categoryMigrationCard[hidden] { display: none; }
+#categoryMigrationCard { margin-top: 18px; }
+#categoryMigrationCard .cm-summary { margin: 12px 0; color: var(--muted-strong); }
+#categoryMigrationCard input { min-width: 150px; }
+.pill.cm-move { color: #8db4ff; border-color: rgba(141, 180, 255, 0.45); }
+.pill.cm-warn { color: #ffb4a8; border-color: rgba(255, 140, 120, 0.5); }
+
+/* Übersicht: Hauptaussage, Kennzahlen mit Vormonat, Kategorie im Verlauf */
+.hero-grid.hero-grid-two { grid-template-columns: 2fr 1fr; }
+@media (max-width: 1100px) { .hero-grid.hero-grid-two { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .hero-grid.hero-grid-two { grid-template-columns: 1fr; } }
+.hero-value.is-negative { color: #ffb4a8; }
+.spend-bar { position: relative; height: 10px; margin: 14px 0 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); }
+.spend-bar span { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 999px; background: #e8eef8; transition: width 0.3s ease; }
+.spend-bar span.is-over { background: #ff8a7a; }
+.spend-bar i { position: absolute; top: -5px; width: 2px; height: 20px; margin-left: -1px; border-radius: 1px; background: #ffd36b; }
+.spend-bar i[hidden] { display: none; }
+.kpi-delta { margin-top: 6px; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.kpi-delta.is-good { color: #6fd9a0; }
+.kpi-delta.is-bad { color: #ff9b8f; }
+.kpi-split { display: flex; height: 6px; margin: 10px 0 6px; overflow: hidden; border-radius: 999px; background: #f2994a; }
+.kpi-split span { display: block; height: 100%; background: #5b8def; }
+.trend-card .card-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.trend-select select { min-width: 240px; max-width: 100%; }
+.trend-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.trend-stat { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255, 255, 255, 0.03); }
+.trend-stat span { color: var(--muted); font-size: 0.78rem; }
+.trend-stat strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.trend-stat strong.is-good { color: #6fd9a0; }
+.trend-stat strong.is-bad { color: #ff9b8f; }
+.trend-card canvas { height: 300px !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 760px) { .trend-select, .trend-select select { width: 100%; } .trend-card canvas { height: 240px !important; } }
