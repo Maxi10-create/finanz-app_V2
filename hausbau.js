@@ -817,17 +817,22 @@
 
   /* ---- render ----------------------------------------------------------- */
 
-  function render() {
+  /** Cheap, runs on every data load: shows or hides the tab and the dashboard card. */
+  function sync() {
     const nav = document.querySelector('.nav-btn[data-tab="hausbau"]');
     const panel = document.getElementById("panel-hausbau");
     const dashboardCard = document.getElementById("hausbauDashboardCard");
     const visible = !!data();
     nav?.classList.toggle("is-hidden", !visible);
     if (dashboardCard) dashboardCard.hidden = !visible;
-    if (!visible) {
-      if (panel?.classList.contains("active")) document.querySelector('.nav-btn[data-tab="dashboard"]')?.click();
-      return;
+    if (!visible && panel?.classList.contains("active")) {
+      document.querySelector('.nav-btn[data-tab="dashboard"]')?.click();
     }
+    return visible;
+  }
+
+  function render() {
+    if (!sync()) return;
     const root = document.getElementById("hausbauRoot");
     if (!root) return;
     if (!skeletonBuilt) {
@@ -843,7 +848,6 @@
     renderIngrid();
     renderLoans();
     renderSettings();
-    renderDashboardCard();
     showSection();
   }
 
@@ -1131,7 +1135,7 @@
 
   function renderDashboardCard() {
     const card = document.getElementById("hausbauDashboardCard");
-    if (!card) return;
+    if (!card || !data()) return;
     const rows = expenses();
     const total = rows.reduce((sum, row) => sum + num(row.amount), 0);
     const mine = rows.reduce((sum, row) => sum + expenseShares(row).max, 0);
@@ -1184,5 +1188,5 @@
     win.print();
   }
 
-  window.Hausbau = { render, loanFixedCostRows, loanSchedule, ingridBalance };
+  window.Hausbau = { sync, render, renderDashboardCard, loanFixedCostRows, loanSchedule, ingridBalance };
 })();

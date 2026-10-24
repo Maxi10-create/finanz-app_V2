@@ -127,6 +127,14 @@ function logoutUser() {
   if (token) authPost({ action: 'logout', token }).catch(() => {});
   sessionStorage.removeItem('financeActiveUser');
   sessionStorage.removeItem('financeToken');
+  // Drop the locally kept data set (see saveDataCache in app.js).
+  try {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith('financeDataCache:'))
+      .forEach((key) => localStorage.removeItem(key));
+  } catch (error) {
+    // Storage blocked: nothing was kept.
+  }
   document.body.classList.remove('theme-blue', 'theme-pink');
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appShell').style.display = 'none';
