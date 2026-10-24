@@ -2297,12 +2297,17 @@
   function polishChartConfig(config) {
     Chart.defaults.font.family = '"Inter", system-ui, sans-serif';
     Chart.defaults.font.size = 12;
-    Chart.defaults.color = "#8fa4c8";
-    Chart.defaults.borderColor = "rgba(184,205,241,0.08)";
+    Chart.defaults.color = "#9ba1ab";
+    Chart.defaults.borderColor = "rgba(255,255,255,0.06)";
+    Chart.defaults.animation.duration = 350;
+    Chart.defaults.elements.bar.borderRadius = 6;
+    Chart.defaults.elements.line.borderWidth = 2;
+    Chart.defaults.elements.point.radius = 0;
+    Chart.defaults.elements.point.hoverRadius = 4;
     Chart.defaults.plugins.legend.labels.usePointStyle = true;
     Chart.defaults.plugins.legend.labels.boxWidth = 8;
-    Chart.defaults.plugins.tooltip.backgroundColor = "rgba(8,18,35,0.96)";
-    Chart.defaults.plugins.tooltip.borderColor = "rgba(184,205,241,0.2)";
+    Chart.defaults.plugins.tooltip.backgroundColor = "#24272c";
+    Chart.defaults.plugins.tooltip.borderColor = "#363a41";
     Chart.defaults.plugins.tooltip.borderWidth = 1;
     Chart.defaults.plugins.tooltip.padding = 10;
     Chart.defaults.plugins.tooltip.cornerRadius = 10;
@@ -2691,24 +2696,24 @@
           {
             label: "Ausgaben gesamt",
             data: totalSeries,
-            borderColor: "#4f7cff",
-            backgroundColor: "rgba(79,124,255,.15)",
+            borderColor: "#8ab4f8",
+            backgroundColor: "rgba(138,180,248,.15)",
             fill: false,
             tension: 0.25
           },
           {
             label: "Fixkosten",
             data: fixedSeries,
-            borderColor: "#ffbe3d",
-            backgroundColor: "rgba(255,190,61,.15)",
+            borderColor: "#f2c14e",
+            backgroundColor: "rgba(242,193,78,.15)",
             fill: false,
             tension: 0.25
           },
           {
             label: "Variable Kosten",
             data: variableSeries,
-            borderColor: "#ff6d7a",
-            backgroundColor: "rgba(255,109,122,.15)",
+            borderColor: "#f28b82",
+            backgroundColor: "rgba(242,139,130,.15)",
             fill: false,
             tension: 0.25
           }
@@ -2717,32 +2722,32 @@
           {
             label: "Einnahmen",
             data: incomeSeries,
-            borderColor: "#13c296",
-            backgroundColor: "rgba(19,194,150,.15)",
+            borderColor: "#5fd3a6",
+            backgroundColor: "rgba(95,211,166,.15)",
             fill: false,
             tension: 0.25
           },
           {
             label: "Ausgaben gesamt",
             data: totalSeries,
-            borderColor: "#4f7cff",
-            backgroundColor: "rgba(79,124,255,.15)",
+            borderColor: "#8ab4f8",
+            backgroundColor: "rgba(138,180,248,.15)",
             fill: false,
             tension: 0.25
           },
           {
             label: "Fixkosten",
             data: fixedSeries,
-            borderColor: "#ffbe3d",
-            backgroundColor: "rgba(255,190,61,.15)",
+            borderColor: "#f2c14e",
+            backgroundColor: "rgba(242,193,78,.15)",
             fill: false,
             tension: 0.25
           },
           {
             label: "Variable Kosten",
             data: variableSeries,
-            borderColor: "#ff6d7a",
-            backgroundColor: "rgba(255,109,122,.15)",
+            borderColor: "#f28b82",
+            backgroundColor: "rgba(242,139,130,.15)",
             fill: false,
             tension: 0.25
           }
@@ -5735,6 +5740,7 @@
     populateVacationAnalysisSelect();
     window.Hausbau?.sync();
     window.CategoryMigration?.sync();
+    window.AppShell?.sync();
     // Only the visible tab is drawn now; the others are drawn when opened.
     Object.keys(TAB_RENDERERS).forEach((tab) => state.dirtyTabs.add(tab));
     renderTab(activeTab());
@@ -6238,7 +6244,7 @@
       plugins: {
         legend: {
           labels: {
-            color: "#d8e4ff",
+            color: "#d5d8dd",
             boxWidth: 14,
             boxHeight: 14
           }
@@ -6266,17 +6272,17 @@
         x: {
           stacked,
           ticks: {
-            color: "#aec1e6"
+            color: "#9ba1ab"
           },
           grid: {
-            color: "rgba(255,255,255,.05)"
+            display: false
           }
         },
         y: {
           stacked,
           beginAtZero: true,
           ticks: {
-            color: "#aec1e6",
+            color: "#9ba1ab",
             callback(value) {
               return valueMode === "percent"
                 ? `${value} %`
