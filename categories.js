@@ -9,6 +9,36 @@
   let inventory = null;
   let busy = false;
 
+  // Refinements on top of the server's suggestions, so the mapping can improve
+  // without a new backend deployment. [pattern on "main sub", new main, new sub|null=keep]
+  const CLIENT_RULES = [
+    [/^abos? .*(netzbetreiber|handy|mobilfunk)/, "Abos & Kommunikation", "Handy"],
+    [/^abos? .*(daten|cloud|speicher)/, "Abos & Kommunikation", "Software & Cloud"],
+    [/^abos? .*(unterhaltung|streaming|netflix|spotify|disney|prime)/, "Abos & Kommunikation", "Streaming"],
+    [/^abos? /, "Abos & Kommunikation", null],
+    [/ abos?$/, "Abos & Kommunikation", "Sonstiges"]
+  ];
+
+  function refine(row) {
+    if (row.module !== "Haushalt") return;
+    const text = `${row.main_category} ${row.sub_category}`.toLowerCase();
+    const keep = /arbeit|mapact|kaution|hausbau/.test(text);
+    if (!keep) {
+      for (const [pattern, main, sub] of CLIENT_RULES) {
+        // A generic rule (keeps the sub) never overrides a precise server suggestion.
+        if (pattern.test(text) && !(sub == null && row.rule === "sub")) {
+          row.new_main = main;
+          row.new_sub = sub == null ? row.sub_category : sub;
+          row.rule = "client";
+          break;
+        }
+      }
+    }
+    // A sub category that does not exist in the new tree is a guess: ask to check it.
+    const group = inventory.tree.find((g) => g.main === row.new_main);
+    row.uncertain = !!group && !group.subs.includes(row.new_sub) && (row.new_main !== row.main_category || row.new_sub !== row.sub_category);
+  }
+
   function root() {
     return document.getElementById("categoryMigrationCard");
   }
@@ -42,6 +72,7 @@
         <div class="actions-row">
           <button class="btn btn-ghost" type="button" data-cm="load">Vorschau laden</button>
           <button class="btn btn-primary" type="button" data-cm="run" disabled>Umstellung durchführen</button>
+          <button class="btn btn-ghost" type="button" data-cm="copy" disabled>Liste kopieren</button>
         </div>
         <p class="cm-summary" data-cm="summary"></p>
         <div class="table-scroll">
@@ -70,6 +101,7 @@
     const action = event.target.closest("[data-cm]")?.dataset.cm;
     if (action === "load") load();
     if (action === "run") run();
+    if (action === "copy") copyList();
   }
 
   function onInput(event) {
@@ -77,6 +109,7 @@
     if (!input || !inventory) return;
     const row = inventory.categories[Number(input.dataset.index)];
     row[input.dataset.field] = input.value.trim();
+    row.uncertain = false;
     const status = input.closest("tr").querySelector(".cm-status");
     status.outerHTML = statusPill(row);
     renderSummary();
@@ -88,6 +121,7 @@
 
   function statusPill(row) {
     if (!row.new_main) return '<span class="pill cm-status cm-warn">Hauptkategorie fehlt</span>';
+    if (row.uncertain) return '<span class="pill cm-status cm-check">bitte prüfen</span>';
     return changes(row)
       ? '<span class="pill cm-status cm-move">wird umbenannt</span>'
       : '<span class="pill cm-status">bleibt</span>';
@@ -105,10 +139,13 @@
     const moving = rows.filter(changes);
     const entries = rows.reduce((sum, r) => sum + r.bookings + r.fixed_costs + r.trip_expenses, 0);
     const invalid = rows.some((r) => !r.new_main);
+    const unsure = rows.filter((r) => r.uncertain).length;
     el.textContent =
       `${rows.length} Kategorien in Verwendung mit ${entries} Einträgen. ` +
-      `${moving.length} werden umbenannt, ${rows.length - moving.length} bleiben wie sie sind. ` +
-      "Du kannst jede Zuordnung vorher ändern.";
+      `${moving.length} werden umbenannt, ${rows.length - moving.length} bleiben wie sie sind` +
+      (unsure ? `, ${unsure} bitte prüfen` : "") +
+      ". Du kannst jede Zuordnung vorher ändern.";
+    root().querySelector('[data-cm="copy"]').disabled = false;
     runBtn.disabled = busy || invalid || !moving.length;
   }
 
@@ -143,6 +180,27 @@
     table.hidden = false;
   }
 
+  // Plain text of the whole preview, to paste into a chat or a spreadsheet.
+  async function copyList() {
+    if (!inventory) return;
+    const lines = [["Modul", "Hauptkategorie", "Unterkategorie", "Einträge", "Betrag", "Neu Haupt", "Neu Unter"].join("\t")]
+      .concat(inventory.categories.map((r) => [
+        r.module, r.main_category, r.sub_category,
+        r.bookings + r.fixed_costs + r.trip_expenses,
+        Number(r.amount || 0).toFixed(2).replace(".", ","),
+        r.new_main, r.new_sub
+      ].join("\t")));
+    const text = lines.join("\n");
+    const btn = root().querySelector('[data-cm="copy"]');
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "Kopiert ✓";
+    } catch (err) {
+      window.prompt("Liste kopieren:", text);
+    }
+    setTimeout(() => { btn.textContent = "Liste kopieren"; }, 2000);
+  }
+
   async function load() {
     if (busy) return;
     busy = true;
@@ -153,6 +211,7 @@
     try {
       const result = await app().apiPost("categoryInventory", {});
       inventory = { categories: result.categories || [], tree: result.tree || [] };
+      inventory.categories.forEach(refine);
       renderTable();
     } catch (err) {
       app().showMessage(
