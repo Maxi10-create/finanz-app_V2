@@ -22,9 +22,10 @@
 
   <link rel="stylesheet" href="styles.css" />
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
   <script defer src="config.js"></script>
   <script defer src="auth.js"></script>
+  <script defer src="hausbau.js"></script>
   <script defer src="app.js"></script>
 </head>
 
@@ -138,6 +139,13 @@
           data-tab="bookings"
         >
           Buchungen
+        </button>
+        <button
+          type="button"
+          class="nav-btn is-hidden"
+          data-tab="hausbau"
+        >
+          Hausbau
         </button>
 
         <button
@@ -342,6 +350,12 @@
           class="kpi-grid"
           id="kpiGrid"
         ></div>
+
+        <section
+          class="card"
+          id="hausbauDashboardCard"
+          hidden
+        ></section>
 
         <section class="card master-card">
           <div class="card-header">
@@ -2301,6 +2315,17 @@
           </section>
 
         </div>
+      </section>
+
+      <!-- =====================================================
+           HAUSBAU (nur für den Hausbau-Owner, siehe hausbau.js)
+      ====================================================== -->
+
+      <section
+        class="panel"
+        id="panel-hausbau"
+      >
+        <div id="hausbauRoot"></div>
       </section>
 
     </main>

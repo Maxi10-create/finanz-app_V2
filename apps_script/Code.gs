@@ -1,4 +1,4 @@
-const API_VERSION = 'v8-2026-08-11-shopping-list';
+const API_VERSION = 'v10-2026-10-24-hausbau';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -12,8 +12,20 @@ const SHEETS = {
   CATEGORIES: 'Categories',
   FIXED_COSTS: 'Fixed_Costs',
   TASKS: 'Household_Tasks',
-  SHOPPING: 'Shopping_List'
+  SHOPPING: 'Shopping_List',
+  BUILD_PROJECT: 'Build_Project',
+  BUILD_EXPENSES: 'Build_Expenses',
+  BUILD_CATEGORIES: 'Build_Categories',
+  BUILD_KEYS: 'Build_Allocation_Keys',
+  BUILD_SETTLEMENTS: 'Build_Settlements',
+  LOANS: 'Loans',
+  LOAN_EVENTS: 'Loan_Events'
 };
+
+// Hausbau sheets share these audit columns (see Hausbau.gs).
+const HAUSBAU_AUDIT_FIELDS = [
+  'created_at', 'updated_at', 'created_by', 'updated_by', 'is_deleted'
+];
 
 const SCHEMAS = {
   [SHEETS.INCOME]: [
@@ -66,19 +78,57 @@ const SCHEMAS = {
   [SHEETS.SHOPPING]: [
     'id', 'item', 'pieces', 'quantity', 'category', 'supermarket', 'status',
     'created_by', 'created_at', 'updated_by', 'updated_at'
-  ]
+  ],
+
+  [SHEETS.BUILD_PROJECT]: [
+    'id', 'title', 'total_budget', 'budget_max', 'budget_ingrid',
+    'area_max', 'area_ingrid', 'start_date', 'end_date', 'status', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_EXPENSES]: [
+    'id', 'date', 'month_key', 'title', 'main_category', 'sub_category',
+    'unit', 'allocation_key', 'share_max', 'vendor', 'invoice_no', 'amount',
+    'status', 'paid_by', 'funding_source', 'loan_id', 'due_date', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_CATEGORIES]: [
+    'id', 'main_category', 'sub_category', 'sort_order'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_KEYS]: [
+    'id', 'name', 'share_max', 'basis', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.BUILD_SETTLEMENTS]: [
+    'id', 'date', 'month_key', 'from_person', 'amount', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.LOANS]: [
+    'id', 'title', 'loan_type', 'lender', 'amount', 'interest_rate',
+    'rate_type', 'fixed_until', 'term_months', 'monthly_rate',
+    'first_rate_month', 'commitment_fee_rate', 'commitment_free_months',
+    'share_max', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  [SHEETS.LOAN_EVENTS]: [
+    'id', 'loan_id', 'date', 'month_key', 'event_type', 'amount',
+    'interest_rate', 'monthly_rate', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS)
 };
 
 const DATE_FIELDS = {
   date: true,
   start_date: true,
-  end_date: true
+  end_date: true,
+  due_date: true
 };
 
 const MONTH_FIELDS = {
   month_key: true,
   start_month: true,
-  end_month: true
+  end_month: true,
+  fixed_until: true,
+  first_rate_month: true
 };
 
 const TIMESTAMP_FIELDS = {
@@ -163,10 +213,16 @@ function doPost(e) {
       throw new Error('unauthorized');
     }
     if (action === 'getall') {
-      return jsonResponse({ success: true, version: API_VERSION, data: getAllData_() });
+      return jsonResponse({ success: true, version: API_VERSION, data: dataForAuth_(auth, getAllDataCached_()) });
+    }
+    // Hausbau is private to its owner (see Hausbau.gs).
+    if (action.indexOf('hausbau') === 0) {
+      assertHausbauAccess_(auth);
     }
 
-    return withScriptLock_(function () {
+    // Every write invalidates the getAll cache and sends the fresh data back,
+    // so the client does not need a second round trip to reload.
+    const response = withScriptLock_(function () {
       let result;
 
       switch (action) {
@@ -338,25 +394,43 @@ function doPost(e) {
           break;
 
         /* ================================================================== */
+        /* HAUSBAU                                                            */
+        /* ================================================================== */
+
+        case 'hausbausave':
+          result = saveHausbauRecord_(payload, auth);
+          break;
+
+        case 'hausbaudelete':
+          result = deleteHausbauRecord_(payload);
+          break;
+
+        /* ================================================================== */
 
         default:
-          return jsonResponse({
+          return {
             success: false,
             version: API_VERSION,
             error: 'Unknown action: ' + action
-          });
+          };
       }
 
-      return jsonResponse(
-        Object.assign(
-          {
-            success: true,
-            version: API_VERSION
-          },
-          result || {}
-        )
+      invalidateDataCache_();
+
+      return Object.assign(
+        {
+          success: true,
+          version: API_VERSION
+        },
+        result || {}
       );
     });
+
+    if (response.success) {
+      response.data = dataForAuth_(auth, getAllDataCached_());
+    }
+
+    return jsonResponse(response);
 
   } catch (err) {
     return errorResponse_(err);
@@ -372,8 +446,76 @@ function getAllData_() {
     categories: readSheetObjects_(SHEETS.CATEGORIES),
     fixedCosts: readSheetObjects_(SHEETS.FIXED_COSTS),
     tasks: readSheetObjects_(SHEETS.TASKS),
-    shoppingList: readSheetObjects_(SHEETS.SHOPPING)
+    shoppingList: readSheetObjects_(SHEETS.SHOPPING),
+    hausbau: getHausbauData_()
   };
+}
+
+/* ========================================================================== */
+/* GETALL CACHE                                                               */
+/*                                                                            */
+/* getAll is cached in CacheService (free) in chunks, because one cache value */
+/* may hold at most 100 KB. The cache is keyed by a generation token: every   */
+/* write and every manual edit in the sheet (onEdit) sets a new generation,   */
+/* so a stale copy can never be served, even if a slow reader stores it late. */
+/* ========================================================================== */
+
+const DATA_CACHE_SECONDS = 30 * 60;
+const DATA_CACHE_CHUNK_CHARS = 25000;
+const DATA_CACHE_MAX_CHUNKS = 80;
+const DATA_CACHE_GEN_KEY = 'getall_gen';
+
+function getAllDataCached_() {
+  const cache = CacheService.getScriptCache();
+  let gen = cache.get(DATA_CACHE_GEN_KEY);
+  if (!gen) {
+    gen = invalidateDataCache_();
+  }
+
+  const prefix = 'getall_' + gen + '_';
+  const count = Number(cache.get(prefix + 'n') || 0);
+  if (count) {
+    const keys = [];
+    for (let i = 0; i < count; i++) keys.push(prefix + i);
+    const parts = cache.getAll(keys);
+    if (keys.every(function (k) { return parts[k] != null; })) {
+      try {
+        return JSON.parse(keys.map(function (k) { return parts[k]; }).join(''));
+      } catch (err) {
+        console.warn('getAll cache unreadable, reading sheets: ' + err);
+      }
+    }
+  }
+
+  const data = getAllData_();
+  try {
+    const json = JSON.stringify(data);
+    const chunks = Math.ceil(json.length / DATA_CACHE_CHUNK_CHARS);
+    if (chunks <= DATA_CACHE_MAX_CHUNKS) {
+      const entries = {};
+      for (let i = 0; i < chunks; i++) {
+        entries[prefix + i] = json.slice(i * DATA_CACHE_CHUNK_CHARS, (i + 1) * DATA_CACHE_CHUNK_CHARS);
+      }
+      cache.putAll(entries, DATA_CACHE_SECONDS);
+      cache.put(prefix + 'n', String(chunks), DATA_CACHE_SECONDS);
+    }
+  } catch (err) {
+    // Caching is only an optimisation; the fresh data is still returned.
+    console.warn('getAll cache write failed: ' + err);
+  }
+  return data;
+}
+
+/** Starts a new cache generation; old entries simply expire. Returns the new generation. */
+function invalidateDataCache_() {
+  const gen = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  CacheService.getScriptCache().put(DATA_CACHE_GEN_KEY, gen, 6 * 60 * 60);
+  return gen;
+}
+
+/** Simple trigger: manual edits in the sheet must not be hidden by the cache. */
+function onEdit() {
+  invalidateDataCache_();
 }
 
 /* ========================================================================== */
@@ -1058,38 +1200,52 @@ function deleteRowsWhere_(sheetName, predicate) {
     )
     .getValues();
 
-  let deletedCount = 0;
-
   /*
-   * Von unten nach oben löschen.
-   *
-   * Dadurch verändern sich noch nicht bearbeitete
-   * Zeilennummern nicht.
+   * Alle Zeilen auf einmal filtern und den Rest in einem
+   * einzigen Schreibzugriff zurückschreiben, statt jede
+   * Zeile einzeln mit deleteRow zu löschen.
    */
-  for (
-    let index = values.length - 1;
-    index >= 0;
-    index -= 1
-  ) {
-    const rowObject = {};
+  const kept = values.filter(
+    function (row) {
+      const rowObject = {};
 
-    headers.forEach(
-      function (header, columnIndex) {
-        if (!header) return;
+      headers.forEach(
+        function (header, columnIndex) {
+          if (!header) return;
 
-        rowObject[header] =
-          values[index][columnIndex];
-      }
-    );
-
-    if (predicate(rowObject)) {
-      sheet.deleteRow(
-        index + 2
+          rowObject[header] =
+            row[columnIndex];
+        }
       );
 
-      deletedCount += 1;
+      return !predicate(rowObject);
     }
+  );
+
+  const deletedCount =
+    values.length - kept.length;
+
+  if (!deletedCount) {
+    return 0;
   }
+
+  if (kept.length) {
+    sheet
+      .getRange(
+        2,
+        1,
+        kept.length,
+        lastColumn
+      )
+      .setValues(
+        kept
+      );
+  }
+
+  sheet.deleteRows(
+    kept.length + 2,
+    deletedCount
+  );
 
   return deletedCount;
 }
@@ -2197,11 +2353,20 @@ function normalizeAuditFields_(
 /* SHEET ACCESS                                                               */
 /* ========================================================================== */
 
+// Looked up once per execution instead of on every sheet access.
+let SPREADSHEET_MEMO_ = null;
+let TIME_ZONE_MEMO_ = null;
+
 function getSpreadsheet_() {
+  if (SPREADSHEET_MEMO_) {
+    return SPREADSHEET_MEMO_;
+  }
+
   const bound =
     SpreadsheetApp.getActiveSpreadsheet();
 
   if (bound) {
+    SPREADSHEET_MEMO_ = bound;
     return bound;
   }
 
@@ -2213,9 +2378,11 @@ function getSpreadsheet_() {
       );
 
   if (propertyId) {
-    return SpreadsheetApp.openById(
-      propertyId
-    );
+    SPREADSHEET_MEMO_ =
+      SpreadsheetApp.openById(
+        propertyId
+      );
+    return SPREADSHEET_MEMO_;
   }
 
   throw new Error(
@@ -3698,34 +3865,17 @@ function serializeCell_(
 /* ID MANAGEMENT                                                              */
 /* ========================================================================== */
 
+/**
+ * A UUID (122 random bits) cannot realistically collide, so there is no need
+ * to read the whole sheet to check it. findUniqueRowById_ still guards updates.
+ */
 function makeUniqueId_(
   sheetName,
   idField,
   prefix
 ) {
-  for (
-    let attempt = 0;
-    attempt < 10;
-    attempt += 1
-  ) {
-    const id =
-      makeId_(
-        prefix
-      );
-
-    if (
-      !recordExists_(
-        sheetName,
-        idField,
-        id
-      )
-    ) {
-      return id;
-    }
-  }
-
-  throw new Error(
-    'Es konnte keine eindeutige ID erzeugt werden.'
+  return makeId_(
+    prefix
   );
 }
 
@@ -4739,16 +4889,21 @@ function getScriptProperty_(
 }
 
 function getSpreadsheetTimeZone_() {
+  if (TIME_ZONE_MEMO_) {
+    return TIME_ZONE_MEMO_;
+  }
+
   try {
-    return (
+    TIME_ZONE_MEMO_ =
       getSpreadsheet_()
         .getSpreadsheetTimeZone() ||
-      getAppTimeZone_()
-    );
+      getAppTimeZone_();
 
   } catch (err) {
-    return getAppTimeZone_();
+    TIME_ZONE_MEMO_ = getAppTimeZone_();
   }
+
+  return TIME_ZONE_MEMO_;
 }
 
 function getAppTimeZone_() {

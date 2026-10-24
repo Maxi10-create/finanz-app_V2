@@ -38,6 +38,7 @@
     initializedUi: false,
     loadingPromise: null,
     loading: false,
+    dirtyTabs: new Set(),
     data: EMPTY_DATA(),
     tripIndex: {
       byId: new Map(),
@@ -411,7 +412,9 @@
       shoppingList: (input.shoppingList || []).map((row, index) => ({
         ...normalizeRecordNames(row),
         _clientKey: `shopping_${index}_${row.id || ""}`
-      }))
+      })),
+      // Only present for the Hausbau owner; rendered by hausbau.js.
+      hausbau: input.hausbau || null
     };
   }
   function buildApiUrl(baseUrl, params = {}) {
@@ -442,6 +445,11 @@
     const urls =
       (typeof CONFIG !== "undefined" && CONFIG.API_BASE_URLS) ||
       [];
+    // With a single deployment there is nothing to choose, so skip the extra ping round trip.
+    if (urls.length === 1) {
+      state.activeApiBaseUrl = urls[0];
+      return urls[0];
+    }
     for (const baseUrl of urls) {
       try {
         const result = await fetchJson(
@@ -1222,6 +1230,9 @@
     return value;
   }
   function activeFixedCostsForMonth(month) {
+    // Hausbau loan payments count as fixed costs; building costs never do.
+    const loanRows =
+      window.Hausbau?.loanFixedCostRows(month) || [];
     return (state.data.fixedCosts || [])
       .filter(isVisibleFixedCost)
       .filter((row) => {
@@ -1246,7 +1257,8 @@
           return false;
         }
         return true;
-      });
+      })
+      .concat(loanRows);
   }
   function fixedCostsMonthlyTotal(month) {
     return activeFixedCostsForMonth(month)
@@ -1872,19 +1884,26 @@
         "Der Einkaufsartikel wurde nicht gefunden."
       );
     }
-    await apiPost(
-      "updateShoppingItem",
-      {
-        id: item.id,
-        status: completed
-          ? "completed"
-          : "open",
-        updated_by: currentUserName()
-      }
-    );
-    await loadAll({
-      silentSuccess: true
-    });
+    // Show the tick at once and save in the background; undo it if saving fails.
+    const previousStatus = item.status;
+    item.status = completed ? "completed" : "open";
+    renderShoppingList();
+    let result;
+    try {
+      result = await apiPost(
+        "updateShoppingItem",
+        {
+          id: item.id,
+          status: item.status,
+          updated_by: currentUserName()
+        }
+      );
+    } catch (error) {
+      item.status = previousStatus;
+      renderShoppingList();
+      throw error;
+    }
+    await refreshAfterWrite(result);
   }
   async function deleteShoppingCategory(category) {
     if (!category) return;
@@ -1903,9 +1922,7 @@
         }
       );
     resetFormUi("shoppingItem");
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     showMessage(
       `${result.deletedCount || 0} Artikel aus „${category}“ gelöscht.`,
       "success"
@@ -1936,9 +1953,7 @@
         {}
       );
     resetFormUi("shoppingItem");
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     showMessage(
       `${result.deletedCount || 0} erledigte Einkaufsartikel gelöscht.`,
       "success"
@@ -1967,9 +1982,7 @@
         {}
       );
     resetFormUi("shoppingItem");
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     showMessage(
       `${result.deletedCount || 0} Einkaufsartikel gelöscht. Die Einkaufsliste ist jetzt leer.`,
       "success"
@@ -5248,9 +5261,7 @@
         payload
       );
     resetFormUi(type);
-    await loadAll({
-      silentSuccess: true
-    });
+    await refreshAfterWrite(result);
     const warning =
       result.warning
         ? ` ${result.warning}`
@@ -5301,9 +5312,7 @@
           data
         );
       resetFormUi(type);
-      await loadAll({
-        silentSuccess: true
-      });
+      await refreshAfterWrite(result);
       const baseMessage =
         editing
           ? successUpdateText
@@ -5455,20 +5464,47 @@
     );
     populateTripSelect();
     populateVacationAnalysisSelect();
-    renderDashboard();
-    renderHouseholdWeekOverview();
-    renderShoppingList();
-    renderTasksTable();
-    renderHousingOverview();
-    renderVacationOverview();
-    renderTransactionsTable();
-    renderTripsTable();
-    renderTripExpensesTable();
-    renderCategoriesTable();
-    renderFixedCostsTable();
-    renderIncomeTable();
+    window.Hausbau?.sync();
+    // Only the visible tab is drawn now; the others are drawn when opened.
+    Object.keys(TAB_RENDERERS).forEach((tab) => state.dirtyTabs.add(tab));
+    renderTab(activeTab());
     updateTransactionFormVisibility();
     updateTaskRepeatFields();
+  }
+  const TAB_RENDERERS = {
+    dashboard: () => {
+      renderDashboard();
+      window.Hausbau?.renderDashboardCard();
+    },
+    household: () => {
+      renderHouseholdWeekOverview();
+      renderShoppingList();
+      renderTasksTable();
+    },
+    wohnen: renderHousingOverview,
+    urlaub: () => {
+      renderVacationOverview();
+      renderTripsTable();
+      renderTripExpensesTable();
+    },
+    bookings: renderTransactionsTable,
+    zentrale: () => {
+      renderCategoriesTable();
+      renderFixedCostsTable();
+      renderIncomeTable();
+    },
+    hausbau: () => window.Hausbau?.render()
+  };
+  function activeTab() {
+    return (
+      els.tabs?.querySelector(".nav-btn.active")?.dataset.tab ||
+      "dashboard"
+    );
+  }
+  function renderTab(tab) {
+    if (!state.dirtyTabs.has(tab)) return;
+    state.dirtyTabs.delete(tab);
+    TAB_RENDERERS[tab]?.();
   }
   function bindForms() {
     els.transactionForm?.addEventListener("submit", (event) => {
@@ -5749,6 +5785,7 @@
           `panel-${button.dataset.tab}`
         )
         ?.classList.add("active");
+      renderTab(button.dataset.tab);
       requestAnimationFrame(() => {
         Object.values(state.charts).forEach((chart) => {
           chart?.resize?.();
@@ -5977,6 +6014,61 @@
       }
     );
   }
+  // The last data set is kept on this device, so the dashboard shows at once
+  // after a reload or login and is refreshed in the background. Cleared on logout.
+  function dataCacheKey() {
+    const user = currentUser();
+    return user?.userKey ? `financeDataCache:${user.userKey}` : "";
+  }
+  function saveDataCache(data) {
+    const key = dataCacheKey();
+    if (!key || !data) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), data }));
+    } catch (error) {
+      // Storage full or blocked: the app simply loads without the shortcut.
+    }
+  }
+  function showCachedData() {
+    const key = dataCacheKey();
+    if (!key) return false;
+    try {
+      const cached = JSON.parse(localStorage.getItem(key) || "null");
+      if (!cached?.data) return false;
+      applyData(cached.data);
+      setText(
+        els.syncStatus,
+        `Gespeicherter Stand vom ${new Date(cached.savedAt).toLocaleString("de-DE")}, wird aktualisiert...`
+      );
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  function applyData(data) {
+    state.data =
+      withClientKeys(
+        data ||
+        EMPTY_DATA()
+      );
+    rebuildTripIndex();
+    renderAll();
+    setText(
+      els.syncStatus,
+      `Synchronisiert: ${new Date().toLocaleString("de-DE")}`
+    );
+  }
+  // Write responses carry the fresh data, so a save needs one round trip instead of two.
+  async function refreshAfterWrite(result) {
+    if (result?.data) {
+      applyData(result.data);
+      saveDataCache(result.data);
+      return;
+    }
+    await loadAll({
+      silentSuccess: true
+    });
+  }
   async function loadAll({
     silentSuccess = false
   } = {}) {
@@ -5984,26 +6076,19 @@
     state.loading = true;
     clearMessage();
     try {
-      setText(
-        els.syncStatus,
-        "Synchronisierung läuft..."
-      );
+      if (!String(els.syncStatus?.textContent || "").startsWith("Gespeicherter Stand")) {
+        setText(
+          els.syncStatus,
+          "Synchronisierung läuft..."
+        );
+      }
       if (els.reloadBtn) {
         els.reloadBtn.disabled = true;
       }
       const result =
         await apiGet("getAll");
-      state.data =
-        withClientKeys(
-          result.data ||
-          EMPTY_DATA()
-        );
-      rebuildTripIndex();
-      renderAll();
-      setText(
-        els.syncStatus,
-        `Synchronisiert: ${new Date().toLocaleString("de-DE")}`
-      );
+      applyData(result.data);
+      saveDataCache(result.data);
       if (!silentSuccess) {
         showMessage(
           "Daten erfolgreich geladen.",
@@ -6048,7 +6133,8 @@
   }
   async function onUserLoggedIn() {
     setupUiOnce();
-    await loadAll();
+    showCachedData();
+    await loadAll({ silentSuccess: true });
   }
   async function init() {
     try {
@@ -6057,7 +6143,8 @@
       }
       if (!currentUser()) return;
       setupUiOnce();
-      await loadAll();
+      showCachedData();
+      await loadAll({ silentSuccess: true });
     } catch (error) {
       showMessage(
         error.message ||
@@ -6067,6 +6154,24 @@
       console.error(error);
     }
   }
+  // Small bridge for hausbau.js, which lives in its own file.
+  window.FinanceApp = {
+    get data() {
+      return state.data;
+    },
+    state,
+    apiPost,
+    refreshAfterWrite,
+    ensureChart,
+    showMessage,
+    clearMessage,
+    currency,
+    escapeHtml,
+    formatGermanDate,
+    todayDate,
+    currentMonth,
+    currentUserName
+  };
   window.onUserLoggedIn = onUserLoggedIn;
   window.loadAll = loadAll;
   document.addEventListener(

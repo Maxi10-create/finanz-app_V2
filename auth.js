@@ -127,6 +127,14 @@ function logoutUser() {
   if (token) authPost({ action: 'logout', token }).catch(() => {});
   sessionStorage.removeItem('financeActiveUser');
   sessionStorage.removeItem('financeToken');
+  // Drop the locally kept data set (see saveDataCache in app.js).
+  try {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith('financeDataCache:'))
+      .forEach((key) => localStorage.removeItem(key));
+  } catch (error) {
+    // Storage blocked: nothing was kept.
+  }
   document.body.classList.remove('theme-blue', 'theme-pink');
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appShell').style.display = 'none';
@@ -136,8 +144,12 @@ function logoutUser() {
 }
 
 async function initAuth() {
-  await loadUsers();
-  renderUserSelection();
+  // With a stored session the user list is only needed after a logout, so load it
+  // in the background instead of making the dashboard wait for an extra round trip.
+  const usersReady = loadUsers().then(renderUserSelection).catch((error) => {
+    console.error(error);
+    setLoginMessage('Nutzerliste konnte nicht geladen werden.');
+  });
   document.getElementById('loginBtn')?.addEventListener('click', loginUser);
   document.getElementById('loginPassword')?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -153,5 +165,6 @@ async function initAuth() {
     showAppForLoggedInUser(activeUser);
   } else {
     sessionStorage.removeItem('financeActiveUser');
+    await usersReady;
   }
 }
