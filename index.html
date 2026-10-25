@@ -8,7 +8,10 @@
   />
   <meta name="theme-color" content="#121316" />
 
-  <title>Finanz- und Haushaltsdashboard</title>
+  <title>Nomia</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="Nomia" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
@@ -21,16 +24,16 @@
     rel="stylesheet"
   >
 
-  <link rel="stylesheet" href="styles.css?v=20261025f" />
+  <link rel="stylesheet" href="styles.css?v=20261025g" />
 
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
-  <script defer src="config.js?v=20261025f"></script>
-  <script defer src="auth.js?v=20261025f"></script>
-  <script defer src="hausbau.js?v=20261025f"></script>
-  <script defer src="hausbau-import.js?v=20261025f"></script>
-  <script defer src="categories.js?v=20261025f"></script>
-  <script defer src="shell.js?v=20261025f"></script>
-  <script defer src="app.js?v=20261025f"></script>
+  <script defer src="config.js?v=20261025g"></script>
+  <script defer src="auth.js?v=20261025g"></script>
+  <script defer src="hausbau.js?v=20261025g"></script>
+  <script defer src="hausbau-import.js?v=20261025g"></script>
+  <script defer src="categories.js?v=20261025g"></script>
+  <script defer src="shell.js?v=20261025g"></script>
+  <script defer src="app.js?v=20261025g"></script>
 </head>
 
 <body class="theme-blue">
@@ -41,7 +44,7 @@
 
   <div id="loginScreen" class="login-screen">
     <div class="login-card">
-      <h1>Finanzdashboard</h1>
+      <h1 class="login-brand"><img src="logo.svg" alt="" width="44" height="44" /> Nomia</h1>
 
       <div
         id="userSelection"
@@ -100,8 +103,8 @@
     <aside class="sidebar">
 
       <div class="brand">
-        <div class="brand-icon">€</div>
-        <div class="brand-title">Finanzdashboard</div>
+        <img class="brand-icon" src="logo.svg" alt="" width="42" height="42" />
+        <div class="brand-title">Nomia</div>
       </div>
 
       <nav class="nav" id="tabs">
@@ -276,8 +279,9 @@
     <main class="main">
 
       <header class="topbar">
+        <div class="app-brand" aria-hidden="true"><img src="logo.svg" alt="" width="30" height="30" /><span>Nomia</span></div>
         <h1 id="pageTitle">
-          Finanzdashboard – Maximilian Hofer
+          Nomia – Maximilian Hofer
         </h1>
 
         <div class="month-switch" id="monthSwitch">

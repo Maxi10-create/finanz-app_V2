@@ -2433,3 +2433,15 @@ body.panel-open .side-panel {
   .kpi-card .kpi-sub { display: none; }
   .card .hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---- Marke: Nomia ---- */
+img.brand-icon { display: block; padding: 0; border: 0; border-radius: 12px; background: none; box-shadow: none; object-fit: contain; }
+.login-brand { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.login-brand img { border-radius: 12px; }
+.app-brand { display: none; }
+@media (max-width: 760px) {
+  .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; color: var(--text); font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; }
+  .app-brand img { display: block; border-radius: 9px; }
+  .month-switch { flex: 0 1 auto; margin-left: auto; gap: 2px; }
+  .month-switch span { font-size: 0.95rem; text-align: center; white-space: nowrap; }
+}
