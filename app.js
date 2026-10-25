@@ -537,14 +537,44 @@
       throw new Error("Sitzung abgelaufen. Bitte neu anmelden.");
     }
   }
+  const READ_TIMEOUT_MS = 45000;
+  const READ_RETRY_DELAYS_MS = [1500, 4000];
+  /** A failure worth retrying: no answer, a cut connection, a timeout or Google's own error page. */
+  function isTransientError(error) {
+    return error?.transient === true;
+  }
+  async function fetchJsonWithTimeout(url, options) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), READ_TIMEOUT_MS) : null;
+    try {
+      return await fetchJson(url, { ...options, signal: controller?.signal });
+    } catch (error) {
+      error.transient = true;
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
   async function apiGet(action) {
     // Data is only served to a logged-in session, so even reads go out as POST with the token.
+    // Reads change nothing, so a dropped mobile connection or a busy Apps Script is simply retried.
     const baseUrl = await resolveApiBaseUrl();
-    const result = await fetchJson(baseUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, token: authToken() })
-    });
+    let result;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        result = await fetchJsonWithTimeout(baseUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action, token: authToken() })
+        });
+        break;
+      } catch (error) {
+        if (!isTransientError(error) || attempt >= READ_RETRY_DELAYS_MS.length) {
+          throw new Error(`Keine Verbindung zum Server (${error.name === "AbortError" ? "Zeitüberschreitung" : error.message}). Die Daten werden automatisch neu geladen, sobald die Verbindung wieder da ist.`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, READ_RETRY_DELAYS_MS[attempt]));
+      }
+    }
     handleUnauthorized(result);
     if (!result?.success) {
       throw new Error(
@@ -6420,6 +6450,7 @@
         await apiGet("getAll");
       applyData(result.data);
       saveDataCache(result.data);
+      state.lastSyncOk = Date.now();
       warnIfBackendOutdated(result.version);
       if (!silentSuccess) {
         showMessage(
@@ -6428,6 +6459,10 @@
         );
       }
     } catch (error) {
+      state.lastSyncOk = 0;
+      // Try again on its own a little later, so a short dead spot does not leave the page empty.
+      clearTimeout(state.retryTimer);
+      state.retryTimer = setTimeout(reloadWhenStale, 20000);
       setText(
         els.syncStatus,
         "Synchronisierung fehlgeschlagen"
@@ -6469,6 +6504,19 @@
     showCachedData();
     await loadAll({ silentSuccess: true });
   }
+  // Phones pause the page in the background and drop its connection; reload when it comes back.
+  function reloadWhenStale() {
+    if (!currentUser() || state.loading) return;
+    if (state.lastSyncOk && Date.now() - state.lastSyncOk < 60000) return;
+    loadAll({ silentSuccess: true });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reloadWhenStale();
+  });
+  window.addEventListener("online", reloadWhenStale);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) reloadWhenStale();
+  });
   async function init() {
     try {
       if (typeof window.initAuth === "function") {
