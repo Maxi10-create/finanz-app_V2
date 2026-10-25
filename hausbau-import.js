@@ -9,39 +9,13 @@
   const PEOPLE = { "Maximilian Hofer": "max", "Ingrid Harder": "ingrid" };
   const ORIGIN = { dashboard: "Hausbau-Dashboard", haushalt: "Haushaltsbuchung" };
 
-  // Dashboard trade (Gewerk) -> budget block and sub category of the finance app.
-  const TRADE_RULES = [
-    [/gemeinde/i, "Bürokratie & Gebühren", "Gemeinde & Genehmigung", "firma"],
-    [/notar/i, "Bürokratie & Gebühren", "Notar & Grundbuch", "firma"],
-    [/rechtsberatung|notar/i, "Bürokratie & Gebühren", "Notar & Grundbuch"],
-    [/versicherung/i, "Bürokratie & Gebühren", "Bauversicherung"],
-    [/planung|architekt/i, "Planung & Technik", "Architekt"],
-    [/statik/i, "Planung & Technik", "Statik"],
-    [/elektr|blitz/i, "Planung & Technik", "Elektro"],
-    [/heizung|sanit|lüftung|hydraulik|wärmepumpe/i, "Planung & Technik", "Heizung/Wärmepumpe"],
-    [/photovoltaik|\bpv\b/i, "Planung & Technik", "Photovoltaik"],
-    [/abbruch/i, "Abbruch & Rohbau", "Abbruch"],
-    [/baumeister|maurer/i, "Abbruch & Rohbau", "Baumeister/Maurer"],
-    [/dachbegr|carport/i, "Carport & Außenanlagen", "Carport"],
-    [/dach|spengler|zimmerer/i, "Abbruch & Rohbau", "Dach"],
-    [/fenster|tür/i, "Abbruch & Rohbau", "Fenster & Türen"],
-    [/fassade|dämm|putz/i, "Abbruch & Rohbau", "Fassade & Dämmung"],
-    [/garten|außen|zaun|pflaster/i, "Carport & Außenanlagen", "Garten"],
-    [/küche/i, "Innenausbau & Küche", "Küche"],
-    [/tischler/i, "Innenausbau & Küche", "Innentüren"],
-    [/maler/i, "Innenausbau & Küche", "Malerarbeiten"],
-    [/boden|fliesen|parkett/i, "Innenausbau & Küche", "Böden"],
-    [/stiege/i, "Innenausbau & Küche", "Stiegen"]
-  ];
-  const FALLBACK_BLOCK = "Bürokratie & Gebühren";
-
   let dashboardRows = [];
   let fileName = "";
   let busy = false;
   let lastSummary = "";
   const unchecked = new Set();
-  // Budget block chosen for household rows (they are rebuilt from the transactions on every render).
-  const blockOverrides = {};
+  // Gewerk and Firma picked per row; rows are rebuilt on every render, so they live here by key.
+  const overrides = {};
 
   const app = () => window.FinanceApp;
   const hb = () => window.Hausbau;
@@ -52,13 +26,6 @@
 
   function root() {
     return document.getElementById("hbImportCard");
-  }
-
-  function blockFor(gewerk, firma) {
-    for (const [pattern, main, sub, field] of TRADE_RULES) {
-      if (pattern.test(field === "firma" ? firma : gewerk)) return { main, sub };
-    }
-    return { main: FALLBACK_BLOCK, sub: "" };
   }
 
   /** Split of the dashboard ('ja' = Tausendstel, W1 = Ingrid, W2 = Maximilian, prozent = anteil_w1). */
@@ -81,14 +48,12 @@
   }
 
   function fromPayment(payment) {
-    const block = blockFor(payment.gewerk || "", payment.firma || "");
     return {
       source_id: `dashboard:${payment.id}`,
       date: payment.datum,
       title: payment.beschreibung || payment.gewerk || "Zahlung",
-      main_category: block.main,
-      sub_category: block.sub,
       ...shareFor(payment),
+      // Original names; withCategory() turns them into Gewerk and Firma.
       vendor: payment.firma || "",
       trade: payment.gewerk || "",
       tax_bonus: payment.steuerbonus || "keine",
@@ -105,13 +70,12 @@
       source_id: `haushalt:${row.id}`,
       date: row.date,
       title: row.title || row.sub_category || "Hausbau",
-      main_category: FALLBACK_BLOCK,
-      sub_category: "Administration",
       unit: "shared",
       allocation_key: "PROMILLE",
       share_max: hb().promilleShareMax(),
       vendor: "",
-      trade: "Planung & Genehmigung",
+      trade: "",
+      hint: [row.title, row.sub_category, row.note].join(" "),
       tax_bonus: "keine",
       amount: Number(row.amount) || 0,
       status: "bezahlt",
@@ -119,6 +83,24 @@
       funding_source: "eigenmittel",
       note: [row.note, `übernommen aus Haushaltsbuchung ${row.id}`].filter(Boolean).join(" · ")
     };
+  }
+
+  /** Firm decides the Gewerk; a pick in the table wins. vendor/trade mirror Firma/Gewerk. */
+  function withCategory(key, record) {
+    const pick = overrides[key] || hb().classify(record.vendor, record.trade, record.hint || record.title);
+    const out = { ...record, main_category: pick.main, sub_category: pick.sub, vendor: pick.sub, trade: pick.main };
+    delete out.hint;
+    return out;
+  }
+
+  /** Expenses taken over earlier whose Gewerk or Firma no longer follow the firm list. */
+  function staleExpenses() {
+    return alive(hb().expenses()).filter((row) => row.source_id).map((row) => {
+      const record = withCategory(row.source_id, { ...row });
+      return record.main_category !== row.main_category || (record.sub_category && record.sub_category !== row.sub_category)
+        ? { row, record }
+        : null;
+    }).filter(Boolean);
   }
 
   /** Hausbau bookings the owner entered as household expenses (they count as monthly costs there). */
@@ -138,38 +120,56 @@
     const byAmount = new Map(existing.map((row) => [sameKey(row.date, row.amount), row]));
     const fromFile = new Map(dashboardRows.map((record) => [sameKey(record.date, record.amount), record]));
 
-    const rows = dashboardRows.map((record) => {
+    const stale = staleExpenses();
+    const staleIds = new Set(stale.map((entry) => entry.row.source_id));
+    const rows = stale.map(({ row, record }) => ({
+      key: row.source_id,
+      origin: String(row.source_id).split(":")[0],
+      record,
+      state: "recat",
+      twin: `bisher ${[row.main_category, row.sub_category].filter(Boolean).join(" · ")}`
+    }));
+    dashboardRows.forEach((raw) => {
+      if (staleIds.has(raw.source_id)) return;
+      const record = withCategory(raw.source_id, raw);
       const twin = byAmount.get(sameKey(record.date, record.amount));
-      if (bySource.has(record.source_id)) return { key: record.source_id, origin: "dashboard", record, state: "done" };
-      if (twin) return { key: record.source_id, origin: "dashboard", record, state: "twin", twin: twin.title };
-      return { key: record.source_id, origin: "dashboard", record, state: "new" };
+      if (bySource.has(record.source_id)) rows.push({ key: record.source_id, origin: "dashboard", record, state: "done" });
+      else if (twin) rows.push({ key: record.source_id, origin: "dashboard", record, state: "twin", twin: twin.title });
+      else rows.push({ key: record.source_id, origin: "dashboard", record, state: "new" });
     });
     householdRows().forEach((tx) => {
-      const record = fromTransaction(tx);
-      if (blockOverrides[record.source_id]) {
-        record.main_category = blockOverrides[record.source_id];
-        if (!(hb().categoryMap()[record.main_category] || []).includes(record.sub_category)) record.sub_category = "";
-      }
+      const record = withCategory(`haushalt:${tx.id}`, fromTransaction(tx));
       // Already recorded elsewhere: only remove it from the household, unless the dashboard twin is deselected.
       const fileTwin = fromFile.get(sameKey(tx.date, tx.amount));
       const twin = (fileTwin && !unchecked.has(fileTwin.source_id) ? fileTwin : null) || byAmount.get(sameKey(tx.date, tx.amount));
       rows.push({
-        key: record.source_id,
+        key: twin ? `remove:${tx.id}` : record.source_id,
         origin: "haushalt",
         record,
         txId: tx.id,
         state: twin ? "removeOnly" : "move",
-        twin: twin?.title
+        twin: twin ? `schon erfasst als „${twin.title}“, wird aus dem Haushalt entfernt` : ""
       });
     });
+    // A household booking taken over although the dashboard already had the payment.
+    const fromDashboard = new Set(existing.filter((row) => String(row.source_id || "").startsWith("dashboard:"))
+      .map((row) => sameKey(row.date, row.amount)));
+    existing.filter((row) => String(row.source_id || "").startsWith("haushalt:") && fromDashboard.has(sameKey(row.date, row.amount)))
+      .forEach((row) => {
+        const index = rows.findIndex((entry) => entry.key === row.source_id);
+        if (index !== -1) rows.splice(index, 1);
+        rows.push({ key: `double:${row.id}`, origin: "haushalt", record: row, expenseId: row.id, state: "double", twin: "kommt schon aus dem Dashboard" });
+      });
     return rows.sort((a, b) => String(a.record.date).localeCompare(String(b.record.date)));
   }
 
   const STATE_TEXT = {
     new: ["neu", "cm-move"],
+    recat: ["Gewerk/Firma neu", "cm-check"],
+    double: ["doppelt, löschen", "cm-warn"],
     move: ["wird verschoben", "cm-move"],
-    removeOnly: ["schon erfasst, nur aus Haushalt entfernen", "cm-check"],
-    twin: ["gleicher Betrag am selben Tag schon vorhanden", "cm-warn"],
+    removeOnly: ["nur entfernen", "cm-check"],
+    twin: ["Betrag schon da", "cm-warn"],
     done: ["schon übernommen", ""]
   };
 
@@ -207,7 +207,7 @@
         <div class="card-header">
           <div>
             <h2>Hausbau-Ausgaben übernehmen</h2>
-            <p>Ab jetzt trägst du Hausbau-Ausgaben nur noch hier ein; das Hausbau-Dashboard zeigt sie nur an. Hier übernimmst du einmalig die Zahlungen aus dem Dashboard (Datei <code>data/zahlungen.json</code> im Hausbau-Ordner) und die Hausbau-Buchungen aus dem Haushalt. Hausbau-Kosten zählen nicht zu den Monatskosten.</p>
+            <p>Ab jetzt trägst du Hausbau-Ausgaben nur noch hier ein; das Hausbau-Dashboard zeigt sie nur an. Hier übernimmst du die Zahlungen aus dem Dashboard (Datei <code>data/zahlungen.json</code> im Hausbau-Ordner) und die Hausbau-Buchungen aus dem Haushalt, jeweils mit Gewerk und Firma. Hausbau-Kosten zählen nicht zu den Monatskosten.</p>
           </div>
         </div>
         <div class="actions-row">
@@ -217,7 +217,7 @@
         <p class="cm-summary" data-hi="summary"></p>
         <div class="table-scroll">
           <table class="data-table" data-hi="table">
-            <thead><tr><th></th><th>Datum</th><th>Ausgabe</th><th class="num">Betrag</th><th>Aufteilung</th><th>Bezahlt von</th><th>Status</th><th>Budgetblock</th></tr></thead>
+            <thead><tr><th></th><th>Datum</th><th>Ausgabe</th><th class="num">Betrag</th><th>Aufteilung</th><th>Bezahlt von</th><th>Status</th><th>Gewerk</th><th>Firma / Instanz</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>`;
@@ -227,11 +227,13 @@
       });
     }
 
-    const blocks = Object.keys(hb().categoryMap());
+    const map = hb().categoryMap();
+    const blocks = Object.keys(map);
     const blockOptions = (selected) => blocks.map((block) =>
       `<option value="${esc(block)}"${block === selected ? " selected" : ""}>${esc(block)}</option>`).join("");
+    const firms = [].concat(...blocks.map((block) => map[block]));
     const chosen = open.filter(isChecked);
-    const total = chosen.filter((row) => row.state !== "removeOnly").reduce((sum, row) => sum + row.record.amount, 0);
+    const total = chosen.filter((row) => ["new", "move", "twin"].includes(row.state)).reduce((sum, row) => sum + Number(row.record.amount || 0), 0);
     const summary = card.querySelector('[data-hi="summary"]');
     summary.textContent = lastSummary || (dashboardRows.length
       ? `${fileName}: ${dashboardRows.length} Zahlungen gelesen. Ausgewählt: ${chosen.length} Einträge, ${app().currency(total)}.`
@@ -241,7 +243,7 @@
     card.querySelector("tbody").innerHTML = rows.map((row) => {
       const r = row.record;
       const [text, tone] = STATE_TEXT[row.state];
-      const sendsRecord = row.state !== "removeOnly";
+      const sendsRecord = row.state !== "removeOnly" && row.state !== "double";
       return `<tr>
         <td><input type="checkbox" data-hi-key="${esc(row.key)}"${isChecked(row) ? " checked" : ""}${row.state === "done" || busy ? " disabled" : ""} aria-label="übernehmen" /></td>
         <td>${esc(app().formatGermanDate(r.date))}</td>
@@ -250,11 +252,12 @@
         <td>${esc(splitLabel(r))}</td>
         <td>${r.paid_by === "ingrid" ? "Ingrid" : "Maximilian"}</td>
         <td><span class="pill ${tone}">${esc(text)}</span>${row.twin ? `<div class="text-muted">${esc(row.twin)}</div>` : ""}</td>
-        <td>${sendsRecord && row.state !== "done"
-          ? `<select data-hi-block="${esc(row.key)}"${busy ? " disabled" : ""}>${blockOptions(r.main_category)}</select>`
-          : esc(r.main_category)}</td>
+        ${sendsRecord && row.state !== "done"
+          ? `<td><select data-hi-block="${esc(row.key)}"${busy ? " disabled" : ""}>${blockOptions(r.main_category)}</select></td>
+             <td><input type="text" list="hiFirmList" data-hi-firm="${esc(row.key)}" value="${esc(r.sub_category)}"${busy ? " disabled" : ""} /></td>`
+          : `<td>${esc(r.main_category)}</td><td>${esc(r.sub_category || "—")}</td>`}
       </tr>`;
-    }).join("");
+    }).join("") + `<datalist id="hiFirmList">${firms.map((firm) => `<option value="${esc(firm)}"></option>`).join("")}</datalist>`;
   }
 
   function findRow(key) {
@@ -277,14 +280,24 @@
       return;
     }
     const block = event.target.closest("[data-hi-block]");
-    if (!block) return;
-    const record = dashboardRows.find((entry) => entry.source_id === block.dataset.hiBlock);
-    if (!record) {
-      blockOverrides[block.dataset.hiBlock] = block.value;
+    if (block) {
+      const key = block.dataset.hiBlock;
+      const sub = findRow(key)?.record.sub_category || "";
+      // A firm that belongs to another Gewerk does not move along.
+      const owner = hb().gewerkOfFirm(sub);
+      overrides[key] = { main: block.value, sub: !owner || owner === block.value ? sub : "" };
+      lastSummary = "";
+      render();
       return;
     }
-    record.main_category = block.value;
-    if (!(hb().categoryMap()[block.value] || []).includes(record.sub_category)) record.sub_category = "";
+    const firm = event.target.closest("[data-hi-firm]");
+    if (firm) {
+      const key = firm.dataset.hiFirm;
+      const sub = firm.value.trim();
+      overrides[key] = { main: hb().gewerkOfFirm(sub) || findRow(key)?.record.main_category, sub };
+      lastSummary = "";
+      render();
+    }
   }
 
   async function readFile(file) {
@@ -310,22 +323,26 @@
     if (busy) return;
     const chosen = candidates().filter((row) => row.state !== "done" && isChecked(row));
     if (!chosen.length) return;
-    const records = chosen.filter((row) => row.state !== "removeOnly").map((row) => ({ ...row.record }));
+    const records = chosen.filter((row) => row.state !== "removeOnly" && row.state !== "double").map((row) => ({ ...row.record }));
     const moveTransactionIds = chosen.filter((row) => row.txId).map((row) => row.txId);
-    const total = records.reduce((sum, record) => sum + record.amount, 0);
+    const deleteExpenseIds = chosen.filter((row) => row.expenseId).map((row) => row.expenseId);
+    const total = chosen.filter((row) => ["new", "move", "twin"].includes(row.state)).reduce((sum, row) => sum + Number(row.record.amount || 0), 0);
     const question = [
-      records.length ? `${records.length} Ausgaben (${app().currency(total)}) in den Hausbau übernehmen` : "",
-      moveTransactionIds.length ? `${moveTransactionIds.length} Hausbau-Buchungen aus dem Haushalt entfernen` : ""
+      records.length ? `${records.length} Ausgaben (${app().currency(total)}) in den Hausbau übernehmen oder Gewerk/Firma anpassen` : "",
+      moveTransactionIds.length ? `${moveTransactionIds.length} Hausbau-Buchungen aus dem Haushalt entfernen` : "",
+      deleteExpenseIds.length ? `${deleteExpenseIds.length} doppelte Hausbau-Ausgaben löschen` : ""
     ].filter(Boolean).join(" und ");
     if (!window.confirm(`${question}?`)) return;
 
     busy = true;
     render();
     try {
-      const result = await app().apiPost("hausbauImport", { records, moveTransactionIds });
+      const result = await app().apiPost("hausbauImport", { records, moveTransactionIds, deleteExpenseIds });
       lastSummary = `Fertig: ${result.imported} übernommen` +
+        (result.updated ? `, ${result.updated} mit neuem Gewerk/Firma` : "") +
         (result.skipped ? `, ${result.skipped} waren schon da` : "") +
-        (result.moved ? `, ${result.moved} aus dem Haushalt entfernt` : "") + ".";
+        (result.moved ? `, ${result.moved} aus dem Haushalt entfernt` : "") +
+        (result.removed ? `, ${result.removed} doppelte gelöscht` : "") + ".";
       await app().refreshAfterWrite(result);
       app().showMessage(lastSummary, "success");
     } catch (error) {

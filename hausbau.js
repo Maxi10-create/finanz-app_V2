@@ -23,16 +23,42 @@
   // Tausendstel from the Kostenschlüssel of the house dashboard (W2 = Maximilian, W1 = Ingrid).
   const PROMILLE = { max: 534, ingrid: 466 };
   const TAX_BONUS = { keine: "keiner", ristrutturazione: "Ristrutturazione", ecobonus: "Ecobonus", mobili: "Bonus Mobili" };
-  // Same budget blocks as the Umbau Hintersun 8 cockpit, so both show the same numbers.
+  // Category = Gewerk, sub category = Firma or Instanz. Every firm belongs to exactly one
+  // Gewerk; the Gewerke follow the Kostenübersicht of the Hintersun 8 project.
   const DEFAULT_CATEGORIES = {
-    "Abbruch & Rohbau": ["Abbruch", "Baumeister/Maurer", "Dach", "Fenster & Türen", "Fassade & Dämmung"],
-    "Wohnung A (EG)": ["Ausbau", "Bad", "Böden", "Elektro", "Sanitär"],
-    "Wohnung B (OG+DG)": ["Ausbau", "Bad", "Böden", "Elektro", "Sanitär"],
-    "Carport & Außenanlagen": ["Carport", "Zufahrt", "Garten", "Zaun"],
-    "Planung & Technik": ["Architekt", "Statik", "Haustechnik-Planung", "Heizung/Wärmepumpe", "Photovoltaik", "Elektro"],
-    "Innenausbau & Küche": ["Küche", "Innentüren", "Malerarbeiten", "Böden", "Stiegen"],
-    "Bürokratie & Gebühren": ["Administration", "Gemeinde & Genehmigung", "Notar & Grundbuch", "Gebühren", "Bauversicherung"]
+    "Bürokratie & Gebühren": ["Gemeinde", "Notarin", "Stadtwerke", "Grundbuch & Kataster", "Agentur der Einnahmen"],
+    "Architekt": ["Arch. Stefan Klement"],
+    "Statik": ["Dipl.-Ing. Manuel Troger"],
+    "Technikerspesen": ["Dr. Ing. Diego Consalvo"],
+    "Steuerberater": ["PSP STP GmbH"],
+    "Baumeister": ["Deltedesco & Söhne GmbH", "Salcher Bau GmbH", "Widmannbau GmbH"],
+    "Zimmerer": ["Bodner Florian GmbH", "Holzbau Brugger", "Oberrauch GmbH", "Silgoner GmbH"],
+    "Spengler": ["Bauspenglerei Dorfmann GmbH"],
+    "Fenster": ["Südtirol Fenster GmbH", "TipTop Fenster GmbH", "Wolf Fenster AG"],
+    "Beschattung": ["Rollmark GmbH"],
+    "Schlosser": ["Günther Gamper", "Kreithner KG", "Plosemetal"],
+    "Elektriker": ["Elektro Stampfl & Brunner GmbH"],
+    "Hydrauliker": ["Thaler KG"],
+    "Klimagerät": [],
+    "Sanitärobjekte (Material)": ["Innerhofer AG", "Sanitär Heinze GmbH"],
+    "Fliesen/Bodenbeläge": ["Peintner Fliesen GmbH"],
+    "Maler": ["Malerbetrieb Rogen Martin"],
+    "Küche": ["Resch Möbel GmbH", "Stampfl Manfred & Co. KG"],
+    "Dachbegrünung/Carport": ["Rasenfix GmbH"],
+    "Garten/Außenanlagen": []
   };
+  // Names used elsewhere (dashboard, bookings) for the same firm or office.
+  const FIRM_ALIASES = [
+    [/klement/i, "Arch. Stefan Klement"],
+    [/consalvo/i, "Dr. Ing. Diego Consalvo"],
+    [/troger/i, "Dipl.-Ing. Manuel Troger"],
+    [/\bpsp\b/i, "PSP STP GmbH"],
+    [/stadtwerk|baustrom/i, "Stadtwerke"],
+    [/grundbuch|kataster/i, "Grundbuch & Kataster"],
+    [/agentur der einnahmen|registersteuer/i, "Agentur der Einnahmen"],
+    [/gemeinde|stempelmarke|sekretariatsgeb/i, "Gemeinde"],
+    [/notar/i, "Notarin"]
+  ];
   const MAX_LOAN_MONTHS = 600;
 
   let activeSection = "overview";
@@ -372,16 +398,50 @@
 
   /* ---- categories ------------------------------------------------------- */
 
+  /** Gewerk -> firms: defaults, own categories and every Gewerk/Firma pair already booked. */
   function categoryMap() {
     const map = {};
-    Object.keys(DEFAULT_CATEGORIES).forEach((main) => { map[main] = DEFAULT_CATEGORIES[main].slice(); });
-    alive(data()?.categories).forEach((row) => {
-      map[row.main_category] = map[row.main_category] || [];
-      if (row.sub_category && !map[row.main_category].includes(row.sub_category)) {
-        map[row.main_category].push(row.sub_category);
-      }
+    const firmOwner = {};
+    const add = (main, sub) => {
+      if (!main) return;
+      map[main] = map[main] || [];
+      if (!sub || firmOwner[sub.toLowerCase()]) return;
+      firmOwner[sub.toLowerCase()] = main;
+      map[main].push(sub);
+    };
+    Object.keys(DEFAULT_CATEGORIES).forEach((main) => {
+      add(main);
+      DEFAULT_CATEGORIES[main].forEach((sub) => add(main, sub));
     });
+    alive(data()?.categories).forEach((row) => add(row.main_category, row.sub_category));
+    alive(data()?.expenses).forEach((row) => add(row.main_category, row.sub_category));
     return map;
+  }
+
+  /** The Gewerk a firm belongs to, or "" for a firm nobody has booked yet. */
+  function gewerkOfFirm(firm) {
+    const wanted = String(firm || "").trim().toLowerCase();
+    if (!wanted) return "";
+    const map = categoryMap();
+    return Object.keys(map).find((main) => map[main].some((sub) => sub.toLowerCase() === wanted)) || "";
+  }
+
+  /**
+   * Gewerk and Firma for a payment described by firm, trade and text (dashboard rows,
+   * household bookings). The firm decides the Gewerk; the trade is only a fallback.
+   */
+  function classify(firm = "", trade = "", text = "") {
+    const name = String(firm || "").trim();
+    let sub = gewerkOfFirm(name) ? name : "";
+    if (!sub) {
+      const hit = FIRM_ALIASES.find(([pattern]) => pattern.test(name)) ||
+        (!name ? FIRM_ALIASES.find(([pattern]) => pattern.test(text)) : null);
+      if (hit) sub = hit[1];
+    }
+    if (sub) return { main: gewerkOfFirm(sub) || "Bürokratie & Gebühren", sub };
+    const map = categoryMap();
+    const main = Object.keys(map).find((key) => key.toLowerCase() === String(trade || "").trim().toLowerCase());
+    return { main: main || "Bürokratie & Gebühren", sub: name };
   }
 
   /* ---- rendering helpers ---------------------------------------------- */
@@ -455,7 +515,7 @@
         </section>
         <div class="chart-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Kosten nach Budgetblock</h2><p>Anteil Maximilian und Ingrid</p></div></div>
+            <div class="card-header"><div><h2>Kosten nach Gewerk</h2><p>Anteil Maximilian und Ingrid</p></div></div>
             <canvas id="hbCategoryChart"></canvas>
           </section>
           <section class="card">
@@ -465,9 +525,9 @@
         </div>
         <div class="table-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Budgetblöcke</h2><p>Bezahlt und offen, mit Aufteilung</p></div></div>
+            <div class="card-header"><div><h2>Gewerke</h2><p>Bezahlt und offen, mit Aufteilung</p></div></div>
             <div class="table-scroll"><table class="data-table" id="hbCategoryTable">
-              <thead><tr><th>Budgetblock</th><th class="num">Gesamt</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th class="num">Offen</th></tr></thead>
+              <thead><tr><th>Gewerk</th><th class="num">Gesamt</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th class="num">Offen</th></tr></thead>
               <tbody></tbody></table></div>
           </section>
           <section class="card">
@@ -493,8 +553,8 @@
             <input type="hidden" name="id" />
             ${field("Datum", `<input type="date" name="date" required />`)}
             ${field("Titel", `<input type="text" name="title" required placeholder="z. B. Elektroinstallation 1. Teilrechnung" />`)}
-            ${field("Budgetblock", `<select name="main_category" id="hbExpenseMain"></select>`)}
-            ${field("Unterkategorie", `<select name="sub_category" id="hbExpenseSub"></select>`)}
+            ${field("Firma / Instanz", `<input type="text" name="sub_category" id="hbExpenseSub" list="hbFirmList" required autocomplete="off" placeholder="z. B. Gemeinde, Stadtwerke, Baumeister-Firma" />`)}
+            ${field("Gewerk", `<select name="main_category" id="hbExpenseMain" required></select>`)}
             ${field("Bauteil", `<select name="unit" id="hbExpenseUnit">${options(UNITS, "shared")}</select>`)}
             ${field("Aufteilung", `<select name="allocation_key" id="hbExpenseKey"></select>`)}
             ${field("Anteil Maximilian (%)", `<input type="number" name="share_max" id="hbExpenseShare" min="0" max="100" step="any" />`)}
@@ -503,28 +563,25 @@
             ${field("Bezahlt von", `<select name="paid_by" id="hbExpensePaidBy">${options(PEOPLE, "max")}</select>`)}
             ${field("Bezahlt aus", `<select name="funding_source" id="hbExpenseFunding">${options(FUNDING, "eigenmittel")}</select>`)}
             ${field("Kredit / Förderung", `<select name="loan_id" id="hbExpenseLoan"></select>`)}
-            ${field("Firma", `<input type="text" name="vendor" list="hbVendorList" />`)}
-            ${field("Gewerk (wie im Hausbau-Dashboard)", `<input type="text" name="trade" list="hbTradeList" placeholder="z. B. Baumeister" />`)}
             ${field("Steuerbonus", `<select name="tax_bonus">${options(TAX_BONUS, "keine")}</select>`)}
             ${field("Rechnungsnummer", `<input type="text" name="invoice_no" />`)}
             ${field("Fällig am", `<input type="date" name="due_date" />`)}
             ${field("Notiz", `<textarea name="note" rows="2"></textarea>`, "full")}
-            <datalist id="hbVendorList"></datalist>
-            <datalist id="hbTradeList"></datalist>
+            <datalist id="hbFirmList"></datalist>
             ${formButtons("expense", "Ausgabe speichern")}
           </form>
         </section>
         <section class="card">
           <div class="card-header"><div><h2>Alle Ausgaben</h2><p id="hbExpenseCount"></p></div></div>
           <div class="form-grid compact-form">
-            ${field("Budgetblock", `<select id="hbFilterMain"></select>`)}
+            ${field("Gewerk", `<select id="hbFilterMain"></select>`)}
             ${field("Bauteil", `<select id="hbFilterUnit">${options(UNITS, "", "Alle Bauteile")}</select>`)}
             ${field("Status", `<select id="hbFilterStatus">${options(STATUS, "", "Alle")}</select>`)}
             ${field("Bezahlt von", `<select id="hbFilterPaidBy">${options(PEOPLE, "", "Alle")}</select>`)}
             ${field("Suche", `<input type="search" id="hbFilterText" placeholder="Titel, Firma, Rechnung" />`)}
           </div>
           <div class="table-scroll"><table class="data-table" id="hbExpenseTable">
-            <thead><tr><th>Datum</th><th>Titel</th><th>Budgetblock</th><th>Bauteil</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
+            <thead><tr><th>Datum</th><th>Titel</th><th>Gewerk · Firma</th><th>Bauteil</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
             <tbody></tbody></table></div>
         </section>
       </div>
@@ -642,16 +699,16 @@
           </section>
         </div>
         <section class="card">
-          <div class="card-header"><div><h2>Eigene Kategorien</h2><p>Ergänzen die Standard-Budgetblöcke</p></div></div>
+          <div class="card-header"><div><h2>Gewerke und Firmen</h2><p>Jede Firma gehört zu genau einem Gewerk. Neue Firmen entstehen auch beim Erfassen einer Ausgabe.</p></div></div>
           <form class="form-grid compact-form" data-entity="category">
             <input type="hidden" name="id" />
-            ${field("Budgetblock", `<input type="text" name="main_category" required list="hbMainList" />`)}
-            ${field("Unterkategorie", `<input type="text" name="sub_category" />`)}
+            ${field("Gewerk", `<input type="text" name="main_category" required list="hbMainList" />`)}
+            ${field("Firma / Instanz", `<input type="text" name="sub_category" />`)}
             <datalist id="hbMainList"></datalist>
             ${formButtons("category", "Kategorie speichern")}
           </form>
           <div class="table-scroll"><table class="data-table" id="hbCategoryAdminTable">
-            <thead><tr><th>Budgetblock</th><th>Unterkategorie</th><th>Aktion</th></tr></thead>
+            <thead><tr><th>Gewerk</th><th>Firma / Instanz</th><th>Aktion</th></tr></thead>
             <tbody></tbody></table></div>
         </section>
       </div>`;
@@ -720,6 +777,7 @@
     root.addEventListener("change", (event) => {
       const target = event.target;
       if (target.id === "hbExpenseMain") fillExpenseSubcategories();
+      if (target.id === "hbExpenseSub") syncGewerkToFirm();
       if (target.id === "hbExpenseUnit") {
         document.getElementById("hbExpenseKey").value = defaultKeyForUnit(target.value);
         applyKeyToShare();
@@ -731,6 +789,7 @@
     });
     root.addEventListener("input", (event) => {
       if (event.target.id === "hbFilterText") renderExpenseTable();
+      if (event.target.id === "hbExpenseSub") syncGewerkToFirm();
     });
   }
 
@@ -763,10 +822,23 @@
     form.elements.loan_id.disabled = !needsLoan;
   }
 
-  function fillExpenseSubcategories(selected = "") {
+  /** Firm suggestions: the firms of the chosen Gewerk first, then all others. */
+  function fillExpenseSubcategories() {
+    const map = categoryMap();
     const main = document.getElementById("hbExpenseMain").value;
-    setOptions(document.getElementById("hbExpenseSub"), listOptions(categoryMap()[main] || [], selected, "—"));
-    if (selected) document.getElementById("hbExpenseSub").value = selected;
+    const firms = (map[main] || []).concat(...Object.keys(map).filter((key) => key !== main).map((key) => map[key]));
+    const list = document.getElementById("hbFirmList");
+    if (list) list.innerHTML = firms.map((firm) => `<option value="${esc(firm)}">${esc(gewerkOfFirm(firm))}</option>`).join("");
+  }
+
+  /** A known firm always books on its own Gewerk. */
+  function syncGewerkToFirm() {
+    const main = gewerkOfFirm(document.getElementById("hbExpenseSub").value);
+    const select = document.getElementById("hbExpenseMain");
+    if (main && select.value !== main) {
+      select.value = main;
+      fillExpenseSubcategories();
+    }
   }
 
   function formValues(form) {
@@ -786,6 +858,14 @@
         record.funding_source = "";
         record.loan_id = "";
       }
+      record.sub_category = String(record.sub_category || "").trim();
+      const owner = gewerkOfFirm(record.sub_category);
+      if (owner && owner !== record.main_category) {
+        app().showMessage(`${record.sub_category} gehört zum Gewerk ${owner}. Bitte dieses Gewerk wählen.`, "error");
+        return;
+      }
+      record.vendor = record.sub_category;
+      record.trade = record.main_category;
       if (record.share_max === "") {
         record.share_max = allocationKeys().find((key) => key.id === record.allocation_key)?.share_max ?? 100;
       }
@@ -834,13 +914,13 @@
     if (!record || !form) return;
     if (entity === "expense") {
       form.elements.main_category.value = record.main_category || "";
-      fillExpenseSubcategories(record.sub_category || "");
+      fillExpenseSubcategories();
     }
     [...form.elements].forEach((element) => {
       if (!element.name || !(element.name in record)) return;
-      if (entity === "expense" && element.name === "sub_category") return;
       element.value = record[element.name] ?? "";
     });
+    if (entity === "expense" && !form.elements.sub_category.value) form.elements.sub_category.value = record.vendor || "";
     if (entity === "expense") updateFundingFields();
     editing[entity] = id;
     form.querySelector(".js-hb-cancel")?.style.removeProperty("display");
@@ -923,18 +1003,14 @@
     const cats = categoryMap();
     const mains = Object.keys(cats);
     setOptions(document.getElementById("hbExpenseMain"), listOptions(mains, "", "—"));
-    if (!document.getElementById("hbExpenseSub").options.length) fillExpenseSubcategories();
-    setOptions(document.getElementById("hbFilterMain"), listOptions(mains, "", "Alle Budgetblöcke"));
+    fillExpenseSubcategories();
+    setOptions(document.getElementById("hbFilterMain"), listOptions(mains, "", "Alle Gewerke"));
     const keySelect = document.getElementById("hbExpenseKey");
     setOptions(keySelect, allocationKeys().map((key) => `<option value="${esc(key.id)}">${esc(key.name)}</option>`).join(""));
     const allLoans = alive(data()?.loans);
     const loanOptions = allLoans.map((loan) => `<option value="${esc(loan.id)}">${esc(loan.title)} (${esc(LOAN_TYPES[loan.loan_type] || "")})</option>`).join("");
     setOptions(document.getElementById("hbExpenseLoan"), `<option value="">—</option>${loanOptions}`);
     setOptions(document.getElementById("hbEventLoan"), loanOptions || `<option value="">Zuerst einen Kredit anlegen</option>`);
-    const vendors = [...new Set(expenses().map((row) => row.vendor).filter(Boolean))].sort();
-    document.getElementById("hbVendorList").innerHTML = vendors.map((vendor) => `<option value="${esc(vendor)}"></option>`).join("");
-    const trades = [...new Set(expenses().map((row) => row.trade).filter(Boolean))].sort();
-    document.getElementById("hbTradeList").innerHTML = trades.map((trade) => `<option value="${esc(trade)}"></option>`).join("");
     document.getElementById("hbMainList").innerHTML = mains.map((main) => `<option value="${esc(main)}"></option>`).join("");
   }
 
@@ -977,7 +1053,7 @@
 
     const byCategory = new Map();
     rows.forEach((row) => {
-      const key = row.main_category || "Ohne Budgetblock";
+      const key = row.main_category || "Ohne Gewerk";
       const entry = byCategory.get(key) || { total: 0, max: 0, ingrid: 0, open: 0 };
       const shares = expenseShares(row);
       entry.total += shares.amount;
@@ -1081,7 +1157,7 @@
           const source = row.paid_by === "ingrid" ? "Ingrid" : `Maximilian · ${FUNDING[row.funding_source] || "Eigenmittel"}`;
           return `<tr>
             <td>${esc(app().formatGermanDate(row.date))}</td>
-            <td>${esc(row.title)}${row.vendor || row.trade ? `<div class="text-muted">${esc([row.trade, row.vendor].filter(Boolean).join(" · "))}${row.invoice_no ? ` · ${esc(row.invoice_no)}` : ""}</div>` : ""}</td>
+            <td>${esc(row.title)}${row.invoice_no ? `<div class="text-muted">${esc(row.invoice_no)}</div>` : ""}</td>
             <td>${esc(row.main_category || "—")}${row.sub_category ? `<div class="text-muted">${esc(row.sub_category)}</div>` : ""}</td>
             <td>${esc(UNITS[row.unit] || "—")}</td>
             <td class="num">${eur(shares.amount)}</td>
@@ -1214,7 +1290,7 @@
     const categories = alive(data()?.categories);
     document.querySelector("#hbCategoryAdminTable tbody").innerHTML = categories.length
       ? categories.map((row) => `<tr><td>${esc(row.main_category)}</td><td>${esc(row.sub_category || "—")}</td><td>${rowActions("category", row.id)}</td></tr>`).join("")
-      : empty(3, "Nur Standard-Budgetblöcke in Verwendung");
+      : empty(3, "Nur die Standard-Gewerke in Verwendung");
   }
 
   function renderDashboardCard() {
@@ -1266,7 +1342,7 @@
       <p>Ingrid Harder und Maximilian Hofer · Stand ${esc(app().formatGermanDate(app().todayDate()))}</p>
       <p class="total">${balance > 0.005 ? `Ingrid schuldet Maximilian ${eur(balance)}` : balance < -0.005 ? `Maximilian schuldet Ingrid ${eur(-balance)}` : "Ausgeglichen"}</p>
       <h2>Positionen mit Anteil Ingrid</h2>
-      <table><thead><tr><th>Datum</th><th>Position</th><th>Budgetblock</th><th class="r">Betrag</th><th class="r">Anteil</th><th class="r">Ingrid</th><th>Bezahlt von</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>
+      <table><thead><tr><th>Datum</th><th>Position</th><th>Gewerk</th><th class="r">Betrag</th><th class="r">Anteil</th><th class="r">Ingrid</th><th>Bezahlt von</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>
       <h2>Saldo-Entwicklung</h2>
       <table><thead><tr><th>Datum</th><th>Position</th><th class="r">Wirkung</th></tr></thead><tbody>${balanceRows}</tbody></table>
       <p>Positiv: zugunsten Maximilian. Negativ: zugunsten Ingrid.</p>
@@ -1278,6 +1354,6 @@
 
   window.Hausbau = {
     sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance,
-    areaShareMax, promilleShareMax, categoryMap, expenses
+    areaShareMax, promilleShareMax, categoryMap, classify, gewerkOfFirm, expenses
   };
 })();

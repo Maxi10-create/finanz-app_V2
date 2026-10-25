@@ -1,4 +1,4 @@
-const API_VERSION = 'v13-2026-10-24-hausbau-import';
+const API_VERSION = 'v14-2026-10-25-gewerk-firma';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -485,7 +485,7 @@ function getAllDataCached_() {
     gen = invalidateDataCache_();
   }
 
-  const prefix = 'getall_' + gen + '_';
+  const prefix = 'getall_' + API_VERSION.split('-')[0] + gen + '_';
   const count = Number(cache.get(prefix + 'n') || 0);
   if (count) {
     const keys = [];
@@ -2576,6 +2576,12 @@ function readSheetObjects_(
       values[0]
     );
 
+  repairDuplicateIds_(
+    sheet,
+    headers,
+    values
+  );
+
   const timeZone =
     getSpreadsheetTimeZone_();
 
@@ -2616,6 +2622,50 @@ function readSheetObjects_(
         return obj;
       }
     );
+}
+
+/**
+ * Rows copied by hand in the sheet can share one id, which makes them impossible to
+ * edit or delete ("ID ist nicht eindeutig"). The first row keeps its id, every later
+ * copy gets the same id with a suffix (_2, _3, ...). The suffix is deterministic, so
+ * two readers repairing at the same time write the same values. Rows without an id
+ * are left alone.
+ */
+function repairDuplicateIds_(
+  sheet,
+  headers,
+  values
+) {
+  const idColumn = headers.indexOf('id');
+  if (idColumn === -1 || values.length < 3) return 0;
+
+  const taken = {};
+  values.slice(1).forEach(function (row) {
+    const id = String(row[idColumn] || '').trim();
+    if (id) taken[id] = (taken[id] || 0) + 1;
+  });
+  if (!Object.keys(taken).some(function (id) { return taken[id] > 1; })) return 0;
+
+  const seen = {};
+  let repaired = 0;
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
+    const id = String(values[rowIndex][idColumn] || '').trim();
+    if (!id || taken[id] < 2) continue;
+    if (!seen[id]) {
+      seen[id] = 1;
+      continue;
+    }
+    let n = ++seen[id];
+    let next = id + '_' + n;
+    while (taken[next]) next = id + '_' + (n = ++seen[id]);
+    taken[next] = 1;
+    values[rowIndex][idColumn] = next;
+    sheet.getRange(rowIndex + 1, idColumn + 1).setValue(next);
+    repaired++;
+  }
+  console.warn('Doppelte IDs repariert in ' + sheet.getName() + ': ' + repaired);
+  invalidateDataCache_();
+  return repaired;
 }
 
 function appendByHeaders_(
