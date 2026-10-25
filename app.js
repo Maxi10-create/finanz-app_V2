@@ -326,6 +326,10 @@
       return PERSON_A;
     }
     if (raw === "jana march") return PERSON_B;
+    // Login names typed by hand (e.g. "Jana Mrach", "Jana", "Maxi") still belong to the two people.
+    const first = raw.split(/\s+/)[0];
+    if (first === "jana") return PERSON_B;
+    if (first === "maximilian" || first === "maxi" || first === "max") return PERSON_A;
     return String(name || "").trim();
   }
   function normalizeAssignedTo(value) {
