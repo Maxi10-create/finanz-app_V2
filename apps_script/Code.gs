@@ -4041,6 +4041,11 @@ function normalizePersonName_(
     return PERSON_B;
   }
 
+  // Login names typed by hand (e.g. "Jana Mrach", "Jana", "Maxi") still belong to the two people.
+  const first = lower.split(/\s+/)[0];
+  if (first === 'jana') return PERSON_B;
+  if (first === 'maximilian' || first === 'maxi' || first === 'max') return PERSON_A;
+
   return raw;
 }
 
