@@ -16,6 +16,8 @@
   const unchecked = new Set();
   // Gewerk and Firma picked per row; rows are rebuilt on every render, so they live here by key.
   const overrides = {};
+  // Split key picked per row (PROMILLE, HALF, MAX, INGRID or an own key).
+  const splitPicks = {};
 
   const app = () => window.FinanceApp;
   const hb = () => window.Hausbau;
@@ -88,7 +90,8 @@
   /** Firm decides the Gewerk; a pick in the table wins. vendor/trade mirror Firma/Gewerk. */
   function withCategory(key, record) {
     const pick = overrides[key] || hb().classify(record.vendor, record.trade, record.hint || record.title);
-    const out = { ...record, main_category: pick.main, sub_category: pick.sub, vendor: pick.sub, trade: pick.main };
+    const split = splitPicks[key] ? hb().splitFields(splitPicks[key]) : null;
+    const out = { ...record, ...(split || {}), main_category: pick.main, sub_category: pick.sub, vendor: pick.sub, trade: pick.main };
     delete out.hint;
     return out;
   }
@@ -249,7 +252,9 @@
         <td>${esc(app().formatGermanDate(r.date))}</td>
         <td>${esc(r.title)}<div class="text-muted">${esc([ORIGIN[row.origin], r.trade, r.vendor].filter(Boolean).join(" · "))}</div></td>
         <td class="num">${app().currency(r.amount)}</td>
-        <td>${esc(splitLabel(r))}</td>
+        <td>${sendsRecord && row.state !== "done"
+          ? `<select data-hi-split="${esc(row.key)}"${busy ? " disabled" : ""}>${splitOptions(r)}</select>`
+          : esc(splitLabel(r))}</td>
         <td>${r.paid_by === "ingrid" ? "Ingrid" : "Maximilian"}</td>
         <td><span class="pill ${tone}">${esc(text)}</span>${row.twin ? `<div class="text-muted">${esc(row.twin)}</div>` : ""}</td>
         ${sendsRecord && row.state !== "done"
@@ -258,6 +263,13 @@
           : `<td>${esc(r.main_category)}</td><td>${esc(r.sub_category || "—")}</td>`}
       </tr>`;
     }).join("") + `<datalist id="hiFirmList">${firms.map((firm) => `<option value="${esc(firm)}"></option>`).join("")}</datalist>`;
+  }
+
+  function splitOptions(record) {
+    const keys = hb().allocationKeys().filter((key) => key.id !== "CUSTOM");
+    const current = keys.find((key) => key.id === record.allocation_key && Math.abs(Number(key.share_max) - Number(record.share_max)) < 0.01);
+    const own = current ? "" : `<option value="" selected>${esc(splitLabel(record))}</option>`;
+    return own + keys.map((key) => `<option value="${esc(key.id)}"${current?.id === key.id ? " selected" : ""}>${esc(key.name)}</option>`).join("");
   }
 
   function findRow(key) {
@@ -286,6 +298,13 @@
       // A firm that belongs to another Gewerk does not move along.
       const owner = hb().gewerkOfFirm(sub);
       overrides[key] = { main: block.value, sub: !owner || owner === block.value ? sub : "" };
+      lastSummary = "";
+      render();
+      return;
+    }
+    const split = event.target.closest("[data-hi-split]");
+    if (split) {
+      if (split.value) splitPicks[split.dataset.hiSplit] = split.value;
       lastSummary = "";
       render();
       return;
@@ -321,8 +340,16 @@
 
   async function run() {
     if (busy) return;
+    // The household rows must match the sheet as it is now (ids may have been repaired).
+    busy = true;
+    render();
+    try {
+      await window.loadAll?.({ silentSuccess: true });
+    } finally {
+      busy = false;
+    }
     const chosen = candidates().filter((row) => row.state !== "done" && isChecked(row));
-    if (!chosen.length) return;
+    if (!chosen.length) { render(); return; }
     const records = chosen.filter((row) => row.state !== "removeOnly" && row.state !== "double").map((row) => ({ ...row.record }));
     const moveTransactionIds = chosen.filter((row) => row.txId).map((row) => row.txId);
     const deleteExpenseIds = chosen.filter((row) => row.expenseId).map((row) => row.expenseId);

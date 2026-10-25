@@ -580,8 +580,9 @@
             ${field("Bezahlt von", `<select id="hbFilterPaidBy">${options(PEOPLE, "", "Alle")}</select>`)}
             ${field("Suche", `<input type="search" id="hbFilterText" placeholder="Titel, Firma, Rechnung" />`)}
           </div>
+          <p class="text-muted">Die Aufteilung kannst du direkt in der Tabelle ändern, sie wird sofort gespeichert.</p>
           <div class="table-scroll"><table class="data-table" id="hbExpenseTable">
-            <thead><tr><th>Datum</th><th>Titel</th><th>Gewerk · Firma</th><th>Bauteil</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
+            <thead><tr><th>Datum</th><th>Titel</th><th>Gewerk · Firma</th><th>Aufteilung</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
             <tbody></tbody></table></div>
         </section>
       </div>
@@ -786,6 +787,7 @@
       if (target.id === "hbExpenseShare") document.getElementById("hbExpenseKey").value = "CUSTOM";
       if (target.id === "hbExpensePaidBy" || target.id === "hbExpenseFunding") updateFundingFields();
       if (target.id && target.id.startsWith("hbFilter")) renderExpenseTable();
+      if (target.dataset?.hbSplit) saveSplit(target);
     });
     root.addEventListener("input", (event) => {
       if (event.target.id === "hbFilterText") renderExpenseTable();
@@ -1134,6 +1136,42 @@
     });
   }
 
+  /** Split picker for one expense; a share no key matches stays as "Individuell". */
+  function splitSelect(row) {
+    const keys = allocationKeys().filter((key) => key.id !== "CUSTOM");
+    const current = keys.find((key) => key.id === row.allocation_key && Math.abs(num(key.share_max) - num(row.share_max)) < 0.01);
+    const share = num(row.share_max);
+    const own = current ? "" : `<option value="" selected>Individuell (${share.toFixed(1)} / ${(100 - share).toFixed(1)})</option>`;
+    return `<select class="hb-split" data-hb-split="${esc(row.id)}" aria-label="Aufteilung">${own}${keys
+      .map((key) => `<option value="${esc(key.id)}"${current?.id === key.id ? " selected" : ""}>${esc(key.name)}</option>`).join("")}</select>`;
+  }
+
+  /** Unit, key and share of a split key (MAX / INGRID book on the own flat). */
+  function splitFields(keyId) {
+    const key = allocationKeys().find((entry) => entry.id === keyId);
+    if (!key || key.share_max === null) return null;
+    return { unit: keyId === "MAX" ? "max" : keyId === "INGRID" ? "ingrid" : "shared", allocation_key: key.id, share_max: key.share_max };
+  }
+
+  async function saveSplit(select) {
+    const row = expenses().find((entry) => entry.id === select.dataset.hbSplit);
+    const fields = splitFields(select.value);
+    if (!row || !fields) return;
+    const names = [...formFor("expense").elements].map((element) => element.name).filter(Boolean);
+    const record = {};
+    names.forEach((name) => { if (name in row) record[name] = row[name] ?? ""; });
+    Object.assign(record, fields, { id: row.id });
+    select.disabled = true;
+    try {
+      const result = await app().apiPost("hausbauSave", { entity: "expense", record });
+      await app().refreshAfterWrite(result);
+      app().showMessage(`Aufteilung für „${row.title}“ gespeichert.`, "success");
+    } catch (error) {
+      app().showMessage(error.message || "Speichern fehlgeschlagen.", "error");
+      select.disabled = false;
+    }
+  }
+
   function renderExpenseTable() {
     const filters = {
       main: document.getElementById("hbFilterMain")?.value || "",
@@ -1159,7 +1197,7 @@
             <td>${esc(app().formatGermanDate(row.date))}</td>
             <td>${esc(row.title)}${row.invoice_no ? `<div class="text-muted">${esc(row.invoice_no)}</div>` : ""}</td>
             <td>${esc(row.main_category || "—")}${row.sub_category ? `<div class="text-muted">${esc(row.sub_category)}</div>` : ""}</td>
-            <td>${esc(UNITS[row.unit] || "—")}</td>
+            <td>${splitSelect(row)}</td>
             <td class="num">${eur(shares.amount)}</td>
             <td class="num">${eur(shares.max)}</td>
             <td class="num">${eur(shares.ingrid)}</td>
@@ -1354,6 +1392,6 @@
 
   window.Hausbau = {
     sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance,
-    areaShareMax, promilleShareMax, categoryMap, classify, gewerkOfFirm, expenses
+    areaShareMax, promilleShareMax, categoryMap, classify, gewerkOfFirm, allocationKeys, splitFields, expenses
   };
 })();
