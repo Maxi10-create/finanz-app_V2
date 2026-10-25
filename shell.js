@@ -75,6 +75,11 @@
 
   function buildBar() {
     if (bar) return;
+    const fade = document.createElement("div");
+    fade.className = "mobile-fade";
+    fade.setAttribute("aria-hidden", "true");
+    document.body.appendChild(fade);
+
     bar = document.createElement("nav");
     bar.className = "mobile-bar";
     bar.setAttribute("aria-label", "Hauptnavigation");

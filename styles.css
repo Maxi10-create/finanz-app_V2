@@ -2353,7 +2353,7 @@ body.panel-open .side-panel {
 }
 
 /* ---- Handy: schwebende Leiste unten ---- */
-.mobile-bar, .mobile-sheet { display: none; }
+.mobile-bar, .mobile-sheet, .mobile-fade { display: none; }
 @media (max-width: 760px) {
   .sidebar { display: contents; }
   .sidebar > .brand, .sidebar > .nav { display: none; }
@@ -2400,6 +2400,13 @@ body.panel-open .side-panel {
     }
     .topbar {
       background: rgba(18, 19, 22, 0.72); border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    }
+    /* Streifen vom Bildschirmrand bis zur Oberkante der Leiste */
+    .mobile-fade {
+      position: fixed; z-index: 99; right: 0; bottom: 0; left: 0; display: block; pointer-events: none;
+      height: calc(76px + env(safe-area-inset-bottom));
+      background: rgba(18, 19, 22, 0.55);
       -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
     }
   }
