@@ -145,9 +145,10 @@ function deleteHausbauRecord_(payload) {
 function importHausbauExpenses_(payload, auth) {
   const userName = normalizePersonName_(auth.user.display_name);
   const sheet = SHEETS.BUILD_EXPENSES;
+  // source_id -> existing row, so a second run only brings Gewerk and Firma up to date.
   const known = {};
   readSheetObjects_(sheet).forEach(function (row) {
-    if (row.source_id && String(row.is_deleted || '').toLowerCase() !== 'ja') known[row.source_id] = true;
+    if (row.source_id && String(row.is_deleted || '').toLowerCase() !== 'ja') known[row.source_id] = row;
   });
 
   const records = (payload.records || []).map(function (input) {
@@ -157,7 +158,9 @@ function importHausbauExpenses_(payload, auth) {
   });
 
   // Only Hausbau bookings may be removed from the household this way.
-  const moveIds = (payload.moveTransactionIds || []).map(String);
+  const moveIds = (payload.moveTransactionIds || []).map(String).filter(function (id, index, list) {
+    return id && list.indexOf(id) === index;
+  });
   if (moveIds.length) {
     const hausbauTx = {};
     readSheetObjects_(SHEETS.TRANSACTIONS).forEach(function (row) {
@@ -168,16 +171,39 @@ function importHausbauExpenses_(payload, auth) {
     });
   }
 
+  // Household bookings taken over twice (the dashboard had the same payment) can be dropped again.
+  const importedFromHousehold = {};
+  Object.keys(known).forEach(function (key) {
+    if (key.indexOf('haushalt:') === 0) importedFromHousehold[String(known[key].id)] = true;
+  });
+  const deleteIds = (payload.deleteExpenseIds || []).map(String);
+  deleteIds.forEach(function (id) {
+    if (!importedFromHousehold[id]) throw new Error('Nur übernommene Haushaltsbuchungen können hier gelöscht werden: ' + id);
+  });
+
+  const CATEGORY_FIELDS = ['main_category', 'sub_category', 'vendor', 'trade'];
   let imported = 0;
   let skipped = 0;
+  let updated = 0;
   records.forEach(function (record) {
-    if (known[record.source_id]) {
-      skipped++;
+    const existing = known[record.source_id];
+    if (existing) {
+      const changes = {};
+      CATEGORY_FIELDS.forEach(function (field) {
+        if (record[field] && String(existing[field] || '') !== record[field]) changes[field] = record[field];
+      });
+      if (Object.keys(changes).length && existing.id) {
+        changes.updated_by = userName;
+        updateObjectById_(sheet, 'id', existing.id, changes);
+        updated++;
+      } else {
+        skipped++;
+      }
       return;
     }
     record.id = makeUniqueId_(sheet, 'id', hausbauEntity_('expense').prefix);
     appendByHeaders_(sheet, record);
-    known[record.source_id] = true;
+    known[record.source_id] = record;
     imported++;
   });
 
@@ -185,7 +211,11 @@ function importHausbauExpenses_(payload, auth) {
     softDeleteById_(SHEETS.TRANSACTIONS, 'id', id);
   });
 
-  return { imported: imported, skipped: skipped, moved: moveIds.length };
+  deleteIds.forEach(function (id) {
+    softDeleteById_(sheet, 'id', id);
+  });
+
+  return { imported: imported, skipped: skipped, updated: updated, moved: moveIds.length, removed: deleteIds.length };
 }
 
 function normalizeHausbauRecord_(entityName, input, isUpdate, userName) {
