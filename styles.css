@@ -2392,6 +2392,18 @@ body.panel-open .side-panel {
   .mobile-bar button.active { background: var(--raised); color: var(--text); }
   .mobile-bar .mobile-add { min-width: 52px; width: 52px; border-radius: 16px; background: var(--accent); color: var(--on-accent); font-size: 1.7rem; font-weight: 500; }
 
+  /* Milchglas: Inhalt unter Leiste und Kopfzeile bleibt verschwommen sichtbar */
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .mobile-bar {
+      background: rgba(31, 34, 38, 0.62); border: 1px solid rgba(255, 255, 255, 0.08);
+      -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+    }
+    .topbar {
+      background: rgba(18, 19, 22, 0.72); border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    }
+  }
+
   .mobile-sheet {
     position: fixed; z-index: 120; right: 0; bottom: 0; left: 0; display: block; max-height: 78vh; overflow-y: auto; overscroll-behavior: contain;
     padding: 10px 16px calc(20px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: var(--surface-strong);
