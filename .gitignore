@@ -1,2 +1,9 @@
-users.csv
+# Lokale Dateien
+.DS_Store
 *.local
+.env
+
+# Echtdaten / Exporte nie einchecken
+users.csv
+*.csv
+exports/
