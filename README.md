@@ -1,39 +1,25 @@
-# Finanzpaket Phase 1 komplett
+# Finanz-App
 
-Enthalten:
-- index.html
-- styles.css
-- app.js
-- auth.js
-- config.js
-- apps_script/Code.gs
-- GoogleSheet_Backend_Struktur.xlsx
+Erfassung von Haushalts-, Urlaubs- und Hausbau-Zahlungen. Frontend auf GitHub Pages, Backend als Google-Apps-Script-Web-App, Daten im Google Sheet. Architektur: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Stand dieses Pakets
-Dieses Paket enthält Phase 1 – Schritt 1 bereits vollständig integriert:
-- Login-Screen
-- Nutzerwahl: Maximilian Hofer / Jana March
-- Login gegen das Apps Script (Passwörter nur als Hash in den Script-Eigenschaften)
-- Blaues Theme für Maximilian
-- Pinkes Theme für Jana
-- Logout
-- created_by / updated_by / owner_user bei neuen Datensätzen vorbereitet
+## Struktur
+| Pfad | Inhalt |
+|---|---|
+| `index.html` | Einstieg (GitHub Pages) |
+| `assets/css/`, `assets/js/` | Frontend |
+| `apps_script/` | Backend (`Code.gs`, `Security.gs`, `Categories.gs`, `Hausbau.gs`) |
+| `docs/` | Sheet-Vorlage ohne Echtdaten |
 
-## Wichtige Hinweise
-1. Nutzer und Passwörter werden im Google Sheet über das Menü **Security** angelegt, nie im Repo.
-2. Für Apps Script bitte `Code.gs` direkt im Google Sheet über **Erweiterungen > Apps Script** einfügen.
-3. Danach als Web-App deployen.
-4. In `config.js` ist die aktuell funktionierende Apps-Script-URL eingetragen.
-
-## Projektordner
-Alle Web-Dateien gehören in denselben Ordner:
-- index.html
-- styles.css
-- app.js
-- auth.js
-- config.js
+## Setup
+1. Google Sheet anlegen (Vorlage: `docs/GoogleSheet_Backend_Struktur.xlsx`).
+2. Inhalte von `apps_script/` unter **Erweiterungen › Apps Script** einfügen, als Web-App deployen.
+3. Web-App-URL in `assets/js/config.js` (`API_BASE_URLS`) eintragen.
+4. Nutzer und Passwörter im Sheet-Menü **Security** anlegen – nie im Repo.
 
 ## Sicherheit
-- Alle Daten nur nach Login (Session-Token, 6 h), Sperre nach 5 Fehlversuchen.
-- `ping` und `users` (nur Namen) sind öffentlich, alles andere nicht.
-- Lesezugriff für das PersonalAI-Backend über ein eigenes Token (Menü Security).
+- Daten nur nach Login (Session-Token 6 h, Sperre nach 5 Fehlversuchen).
+- Öffentlich nur `ping` und `users` (Namen).
+- PersonalAI-Backend liest per eigenem Service-Token (nur `getall`).
+
+## Release
+Bei Frontend-Änderungen `?v=` in `index.html` hochzählen, bei Backend-Änderungen `API_VERSION` in `Code.gs`.
