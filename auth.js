@@ -77,7 +77,7 @@ function applyUserTheme(theme) {
 function showAppForLoggedInUser(user) {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appShell').style.display = 'grid';
-  document.getElementById('pageTitle').textContent = `Finanzdashboard – ${user.displayName}`;
+  document.getElementById('pageTitle').textContent = `Nomia – ${user.displayName}`;
   document.getElementById('activeUserLabel').textContent = user.displayName;
 }
 
