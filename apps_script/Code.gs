@@ -1,4 +1,4 @@
-const API_VERSION = 'v14-2026-10-25-gewerk-firma';
+const API_VERSION = 'v14-2026-10-25-gewerk-firma-split';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';

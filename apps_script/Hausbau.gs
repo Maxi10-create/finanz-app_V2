@@ -181,7 +181,8 @@ function importHausbauExpenses_(payload, auth) {
     if (!importedFromHousehold[id]) throw new Error('Nur übernommene Haushaltsbuchungen können hier gelöscht werden: ' + id);
   });
 
-  const CATEGORY_FIELDS = ['main_category', 'sub_category', 'vendor', 'trade'];
+  // Fields a later run may correct on rows taken over before: Gewerk, Firma and the split.
+  const CATEGORY_FIELDS = ['main_category', 'sub_category', 'vendor', 'trade', 'unit', 'allocation_key', 'share_max'];
   let imported = 0;
   let skipped = 0;
   let updated = 0;
@@ -190,7 +191,8 @@ function importHausbauExpenses_(payload, auth) {
     if (existing) {
       const changes = {};
       CATEGORY_FIELDS.forEach(function (field) {
-        if (record[field] && String(existing[field] || '') !== record[field]) changes[field] = record[field];
+        const value = record[field];
+        if (value !== '' && value != null && String(existing[field] == null ? '' : existing[field]) !== String(value)) changes[field] = value;
       });
       if (Object.keys(changes).length && existing.id) {
         changes.updated_by = userName;
