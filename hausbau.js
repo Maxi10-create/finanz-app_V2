@@ -26,10 +26,10 @@
   // Category = Gewerk, sub category = Firma or Instanz. Every firm belongs to exactly one
   // Gewerk; the Gewerke follow the Kostenübersicht of the Hintersun 8 project.
   const DEFAULT_CATEGORIES = {
-    "Bürokratie & Gebühren": ["Gemeinde", "Notarin", "Stadtwerke", "Grundbuch & Kataster", "Agentur der Einnahmen"],
+    "Bürokratie & Gebühren": ["Gemeinde", "Notarin", "Stadtwerke", "Grundbuch & Kataster", "Agentur der Einnahmen", "ITAS Versicherung"],
     "Architekt": ["Arch. Stefan Klement"],
     "Statik": ["Dipl.-Ing. Manuel Troger"],
-    "Technikerspesen": ["Dr. Ing. Diego Consalvo"],
+    "Technikerspesen": ["Dr. Ing. Diego Consalvo", "Studio E-Plan GZFB GmbH"],
     "Steuerberater": ["PSP STP GmbH"],
     "Baumeister": ["Deltedesco & Söhne GmbH", "Salcher Bau GmbH", "Widmannbau GmbH"],
     "Zimmerer": ["Bodner Florian GmbH", "Holzbau Brugger", "Oberrauch GmbH", "Silgoner GmbH"],
@@ -57,7 +57,16 @@
     [/grundbuch|kataster/i, "Grundbuch & Kataster"],
     [/agentur der einnahmen|registersteuer/i, "Agentur der Einnahmen"],
     [/gemeinde|stempelmarke|sekretariatsgeb/i, "Gemeinde"],
-    [/notar/i, "Notarin"]
+    [/notar/i, "Notarin"],
+    [/e-?plan/i, "Studio E-Plan GZFB GmbH"],
+    [/itas|haftpflicht/i, "ITAS Versicherung"]
+  ];
+  // Standard split for new expenses, by Gewerk; every expense can still be changed one by one.
+  const SPLIT_RULES = [
+    [(main, sub, text) => /schenkung/i.test(text), "MAX"],
+    [(main, sub, text) => /haftpflicht|versicherung/i.test(`${sub} ${text}`), "MAX"],
+    [(main) => main === "Bürokratie & Gebühren", "HALF"],
+    [(main) => main === "Technikerspesen", "PROMILLE"]
   ];
   const MAX_LOAN_MONTHS = 600;
 
@@ -444,6 +453,12 @@
     return { main: main || "Bürokratie & Gebühren", sub: name };
   }
 
+  /** Split key the rules suggest for a Gewerk, firm and title, or "" when no rule applies. */
+  function defaultSplitKey(main = "", sub = "", text = "") {
+    const rule = SPLIT_RULES.find(([test]) => test(String(main), String(sub), String(text)));
+    return rule ? rule[1] : "";
+  }
+
   /* ---- rendering helpers ---------------------------------------------- */
 
   const options = (map, selected = "", empty = "") =>
@@ -779,6 +794,7 @@
       const target = event.target;
       if (target.id === "hbExpenseMain") fillExpenseSubcategories();
       if (target.id === "hbExpenseSub") syncGewerkToFirm();
+      if (["hbExpenseMain", "hbExpenseSub"].includes(target.id) || (target.name === "title" && target.closest('form[data-entity="expense"]'))) applyDefaultSplit();
       if (target.id === "hbExpenseUnit") {
         document.getElementById("hbExpenseKey").value = defaultKeyForUnit(target.value);
         applyKeyToShare();
@@ -831,6 +847,17 @@
     const firms = (map[main] || []).concat(...Object.keys(map).filter((key) => key !== main).map((key) => map[key]));
     const list = document.getElementById("hbFirmList");
     if (list) list.innerHTML = firms.map((firm) => `<option value="${esc(firm)}">${esc(gewerkOfFirm(firm))}</option>`).join("");
+  }
+
+  /** New expenses start with the split the rules suggest; an expense being edited keeps its own. */
+  function applyDefaultSplit() {
+    if (editing.expense) return;
+    const form = formFor("expense");
+    const fields = splitFields(defaultSplitKey(form.elements.main_category.value, form.elements.sub_category.value, form.elements.title.value));
+    if (!fields) return;
+    form.elements.unit.value = fields.unit;
+    document.getElementById("hbExpenseKey").value = fields.allocation_key;
+    applyKeyToShare();
   }
 
   /** A known firm always books on its own Gewerk. */
@@ -1153,17 +1180,22 @@
     return { unit: keyId === "MAX" ? "max" : keyId === "INGRID" ? "ingrid" : "shared", allocation_key: key.id, share_max: key.share_max };
   }
 
+  /** Saves an existing expense with some fields changed; sends the fields the form would send. */
+  function saveExpenseFields(row, changes) {
+    const names = [...formFor("expense").elements].map((element) => element.name).filter(Boolean);
+    const record = {};
+    names.forEach((name) => { if (name in row) record[name] = row[name] ?? ""; });
+    Object.assign(record, changes, { id: row.id });
+    return app().apiPost("hausbauSave", { entity: "expense", record });
+  }
+
   async function saveSplit(select) {
     const row = expenses().find((entry) => entry.id === select.dataset.hbSplit);
     const fields = splitFields(select.value);
     if (!row || !fields) return;
-    const names = [...formFor("expense").elements].map((element) => element.name).filter(Boolean);
-    const record = {};
-    names.forEach((name) => { if (name in row) record[name] = row[name] ?? ""; });
-    Object.assign(record, fields, { id: row.id });
     select.disabled = true;
     try {
-      const result = await app().apiPost("hausbauSave", { entity: "expense", record });
+      const result = await saveExpenseFields(row, fields);
       await app().refreshAfterWrite(result);
       app().showMessage(`Aufteilung für „${row.title}“ gespeichert.`, "success");
     } catch (error) {
@@ -1392,6 +1424,7 @@
 
   window.Hausbau = {
     sync, render, renderDashboardCard, openExpenseForm, loanFixedCostRows, loanSchedule, ingridBalance,
-    areaShareMax, promilleShareMax, categoryMap, classify, gewerkOfFirm, allocationKeys, splitFields, expenses
+    areaShareMax, promilleShareMax, categoryMap, classify, gewerkOfFirm, allocationKeys, splitFields, expenses,
+    defaultSplitKey, saveExpenseFields
   };
 })();
