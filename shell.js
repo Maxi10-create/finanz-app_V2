@@ -52,6 +52,9 @@
   /* ---- filter & account panel ----------------------------------------- */
 
   function setPanel(open) {
+    // The panel lives in the sidebar, whose stacking context would put it under the backdrop.
+    const panel = document.getElementById("sidePanel");
+    if (panel && panel.parentElement !== document.body) document.body.appendChild(panel);
     closeSheet();
     document.body.classList.toggle("panel-open", open);
     document.querySelectorAll('[data-shell="panel"]').forEach((button) => button.setAttribute("aria-expanded", String(open)));
