@@ -1,4 +1,4 @@
-const API_VERSION = 'v15-2026-10-26-auftraege';
+const API_VERSION = 'v16-2026-10-26-finanzierung';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -83,7 +83,9 @@ const SCHEMAS = {
 
   [SHEETS.BUILD_PROJECT]: [
     'id', 'title', 'total_budget', 'budget_max', 'budget_ingrid',
-    'area_max', 'area_ingrid', 'start_date', 'end_date', 'status', 'note'
+    'area_max', 'area_ingrid', 'start_date', 'end_date', 'status', 'note',
+    // Financing plan (Maximilian only): balance on a date, reserve, loan on the account, grant, second loan.
+    'account_balance', 'account_date', 'reserve', 'loan_on_account', 'grant_amount', 'grant_month', 'second_loan'
   ].concat(HAUSBAU_AUDIT_FIELDS),
 
   [SHEETS.BUILD_EXPENSES]: [
@@ -129,7 +131,8 @@ const DATE_FIELDS = {
   start_date: true,
   end_date: true,
   due_date: true,
-  conditions_due: true
+  conditions_due: true,
+  account_date: true
 };
 
 const MONTH_FIELDS = {
@@ -137,7 +140,8 @@ const MONTH_FIELDS = {
   start_month: true,
   end_month: true,
   fixed_until: true,
-  first_rate_month: true
+  first_rate_month: true,
+  grant_month: true
 };
 
 const TIMESTAMP_FIELDS = {
@@ -218,14 +222,14 @@ function doPost(e) {
 
     const auth = authenticate_(body);
     // The backend token may read, and the house app may hand over its orders.
-    if (auth.kind === 'service' && action !== 'getall' && action !== 'hausbausyncorders') {
+    if (auth.kind === 'service' && ['getall', 'hausbausyncorders', 'hausbausyncfinance'].indexOf(action) === -1) {
       throw new Error('unauthorized');
     }
     if (action === 'getall') {
       return jsonResponse({ success: true, version: API_VERSION, data: dataForAuth_(auth, getAllDataCached_()) });
     }
     // Hausbau and the category reorganisation are reserved to the owner (see Hausbau.gs).
-    if (action !== 'hausbausyncorders' && (action.indexOf('hausbau') === 0 || action.indexOf('category') === 0)) {
+    if (action !== 'hausbausyncorders' && action !== 'hausbausyncfinance' && (action.indexOf('hausbau') === 0 || action.indexOf('category') === 0)) {
       assertHausbauAccess_(auth);
     }
     if (action === 'categoryinventory') {
@@ -419,6 +423,10 @@ function doPost(e) {
 
         case 'hausbauimport':
           result = importHausbauExpenses_(payload, auth);
+          break;
+
+        case 'hausbausyncfinance':
+          result = syncHausbauFinance_(payload, auth);
           break;
 
         case 'hausbausyncorders':

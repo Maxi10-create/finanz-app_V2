@@ -6,9 +6,7 @@
   "use strict";
 
   const PEOPLE = { max: "Maximilian", ingrid: "Ingrid" };
-  const UNITS = { max: "Wohnung Maximilian", ingrid: "Wohnung Ingrid", shared: "Gemeinsam" };
   const STATUS = { angebot: "Angebot", beauftragt: "Beauftragt", bezahlt: "Bezahlt" };
-  const FUNDING = { eigenmittel: "Eigenmittel", kredit: "Kredit", foerderung: "Förderung" };
   const LOAN_TYPES = { bank: "Bankkredit", foerderdarlehen: "Förderdarlehen", zuschuss: "Zuschuss" };
   const EVENT_TYPES = {
     auszahlung: "Auszahlung",
@@ -427,18 +425,18 @@
 
   function openExpenseForm(prefill) {
     if (!data()) return;
-    activeSection = "expenses";
-    showSection();
+    if (!skeletonBuilt) render();
     resetForm("expense");
     const form = formFor("expense");
     if (form && prefill?.main) {
       form.elements.main_category.value = prefill.main;
       fillExpenseSubcategories();
-      form.elements.sub_category.value = prefill.sub || "";
+      applyOrderToForm();
+      if (prefill.sub) form.elements.sub_category.value = prefill.sub;
       applyDefaultSplit();
     }
-    form?.scrollIntoView({ behavior: "smooth", block: "start" });
-    form?.elements.title?.focus({ preventScroll: true });
+    showExpenseDialog();
+    form?.elements[prefill?.main ? "title" : "main_category"]?.focus();
   }
 
   /* ---- categories ------------------------------------------------------- */
@@ -551,51 +549,34 @@
         <div class="hb-subnav" id="hbSubnav">
           <button type="button" class="btn btn-ghost btn-xs hb-tab active" data-hb-section="overview">Übersicht</button>
           <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="orders">Aufträge</button>
-          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="expenses">Ausgaben</button>
-          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="ingrid">Aufteilung Ingrid</button>
-          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="loans">Kredit &amp; Förderung</button>
-          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="settings">Einstellungen</button>
+          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="expenses">Zahlungen</button>
+          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="ingrid">Ingrid</button>
+          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="loans">Finanzierung</button>
+          <button type="button" class="btn btn-ghost btn-xs hb-tab hb-tab-gear" data-hb-section="settings" aria-label="Einstellungen" title="Einstellungen">⚙</button>
         </div>
       </section>
 
       <div class="hb-section" data-section="overview">
         <div class="hero-grid" id="hbOverviewHero"></div>
         <section class="card">
-          <div class="card-header"><div><h2>Offene Posten</h2><p>Angebote und beauftragte Leistungen, nach Fälligkeit</p></div></div>
-          <div class="table-scroll"><table class="data-table" id="hbOpenTable">
-            <thead><tr><th>Fällig</th><th>Position</th><th>Firma</th><th>Status</th><th class="num">Betrag</th><th class="num">Dein Anteil</th><th>Aktion</th></tr></thead>
-            <tbody></tbody></table></div>
+          <div class="card-header"><div><h2>Soll und bezahlt je Gewerk</h2><p id="hbSollInfo">Soll aus der Hausbau-App, bezahlt aus deinen Zahlungen</p></div></div>
+          <div class="hb-chart-box" id="hbSollBox"><canvas id="hbSollChart"></canvas></div>
         </section>
         <div class="chart-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Kosten nach Gewerk</h2><p>Anteil Maximilian und Ingrid</p></div></div>
-            <canvas id="hbCategoryChart"></canvas>
-          </section>
-          <section class="card">
-            <div class="card-header"><div><h2>Verlauf</h2><p>Kumulierte Baukosten pro Monat</p></div></div>
+            <div class="card-header"><div><h2>Verlauf</h2><p>Bezahlt, Monat für Monat aufsummiert</p></div></div>
             <canvas id="hbTimelineChart"></canvas>
           </section>
-        </div>
-        <div class="table-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Gewerke</h2><p>Bezahlt und offen, mit Aufteilung</p></div></div>
-            <div class="table-scroll"><table class="data-table" id="hbCategoryTable">
-              <thead><tr><th>Gewerk</th><th class="num">Gesamt</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th class="num">Offen</th></tr></thead>
-              <tbody></tbody></table></div>
-          </section>
-          <section class="card">
-            <div class="card-header"><div><h2>Finanzierung &amp; Bauteile</h2><p>Woher das Geld kommt und wofür</p></div></div>
-            <div class="table-scroll"><table class="data-table" id="hbFundingTable">
-              <thead><tr><th>Position</th><th class="num">Betrag</th></tr></thead>
+            <div class="card-header">
+              <div><h2>Letzte Zahlungen</h2><p>Alle Zahlungen im Reiter Zahlungen</p></div>
+              <button type="button" class="btn btn-primary btn-xs" data-hb-new-payment>+ Zahlung</button>
+            </div>
+            <div class="table-scroll"><table class="data-table" id="hbRecentTable">
+              <thead><tr><th>Datum</th><th>Zahlung</th><th class="num">Betrag</th></tr></thead>
               <tbody></tbody></table></div>
           </section>
         </div>
-        <section class="card">
-          <div class="card-header"><div><h2>Größte Firmen</h2><p>Summe aller Rechnungen pro Firma</p></div></div>
-          <div class="table-scroll"><table class="data-table" id="hbVendorTable">
-            <thead><tr><th>Firma</th><th class="num">Rechnungen</th><th class="num">Summe</th></tr></thead>
-            <tbody></tbody></table></div>
-        </section>
       </div>
 
       <div class="hb-section" data-section="orders" hidden>
@@ -608,50 +589,68 @@
       </div>
 
       <div class="hb-section" data-section="expenses" hidden>
-        <section class="card" id="hbImportCard" hidden></section>
         <section class="card">
-          <div class="card-header"><div><h2>Hausbau-Ausgabe</h2><p id="hbExpenseMode">Neue Ausgabe</p></div></div>
-          <form class="form-grid compact-form" data-entity="expense" id="hbExpenseForm">
-            <input type="hidden" name="id" />
-            ${field("Datum", `<input type="date" name="date" required />`)}
-            ${field("Titel", `<input type="text" name="title" required placeholder="z. B. Elektroinstallation 1. Teilrechnung" />`)}
-            ${field("Firma / Instanz", `<input type="text" name="sub_category" id="hbExpenseSub" list="hbFirmList" required autocomplete="off" placeholder="z. B. Gemeinde, Stadtwerke, Baumeister-Firma" />`)}
-            ${field("Gewerk", `<select name="main_category" id="hbExpenseMain" required></select>`)}
-            ${field("Bauteil", `<select name="unit" id="hbExpenseUnit">${options(UNITS, "shared")}</select>`)}
-            ${field("Aufteilung", `<select name="allocation_key" id="hbExpenseKey"></select>`)}
-            ${field("Anteil Maximilian (%)", `<input type="number" name="share_max" id="hbExpenseShare" min="0" max="100" step="any" />`)}
-            ${field("Betrag (€)", `<input type="number" name="amount" step="0.01" min="0" required />`)}
-            ${field("Status", `<select name="status">${options(STATUS, "bezahlt")}</select>`)}
-            ${field("Bezahlt von", `<select name="paid_by" id="hbExpensePaidBy">${options(PEOPLE, "max")}</select>`)}
-            ${field("Bezahlt aus", `<select name="funding_source" id="hbExpenseFunding">${options(FUNDING, "eigenmittel")}</select>`)}
-            ${field("Kredit / Förderung", `<select name="loan_id" id="hbExpenseLoan"></select>`)}
-            ${field("Steuerbonus", `<select name="tax_bonus">${options(TAX_BONUS, "keine")}</select>`)}
-            ${field("Rechnungsnummer", `<input type="text" name="invoice_no" />`)}
-            ${field("Fällig am", `<input type="date" name="due_date" />`)}
-            ${field("Notiz", `<textarea name="note" rows="2"></textarea>`, "full")}
-            <datalist id="hbFirmList"></datalist>
-            ${formButtons("expense", "Ausgabe speichern")}
-          </form>
-        </section>
-        <section class="card">
-          <div class="card-header"><div><h2>Alle Ausgaben</h2><p id="hbExpenseCount"></p></div></div>
+          <div class="card-header">
+            <div><h2>Zahlungen</h2><p id="hbExpenseCount"></p></div>
+            <button type="button" class="btn btn-primary btn-xs" data-hb-new-payment>+ Zahlung</button>
+          </div>
           <div class="form-grid compact-form">
             ${field("Gewerk", `<select id="hbFilterMain"></select>`)}
-            ${field("Bauteil", `<select id="hbFilterUnit">${options(UNITS, "", "Alle Bauteile")}</select>`)}
-            ${field("Status", `<select id="hbFilterStatus">${options(STATUS, "", "Alle")}</select>`)}
             ${field("Bezahlt von", `<select id="hbFilterPaidBy">${options(PEOPLE, "", "Alle")}</select>`)}
             ${field("Suche", `<input type="search" id="hbFilterText" placeholder="Titel, Firma, Rechnung" />`)}
           </div>
-          <p class="text-muted">Die Aufteilung kannst du direkt in der Tabelle ändern, sie wird sofort gespeichert.</p>
+          <p class="text-muted">Neueste zuerst. Die Aufteilung kannst du direkt in der Liste ändern, sie wird sofort gespeichert.</p>
           <div class="table-scroll"><table class="data-table" id="hbExpenseTable">
-            <thead><tr><th>Datum</th><th>Titel</th><th>Gewerk · Firma</th><th>Aufteilung</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Status</th><th>Bezahlt</th><th>Aktion</th></tr></thead>
+            <thead><tr><th>Datum</th><th>Zahlung</th><th>Gewerk · Firma</th><th>Aufteilung</th><th class="num">Betrag</th><th class="num">Maximilian</th><th class="num">Ingrid</th><th>Bezahlt von</th><th>Aktion</th></tr></thead>
             <tbody></tbody></table></div>
         </section>
+        <dialog class="hb-dialog" id="hbExpenseDialog" aria-labelledby="hbExpenseMode">
+          <form class="form-grid compact-form" data-entity="expense" id="hbExpenseForm">
+            <div class="full hb-dialog-head">
+              <h2 id="hbExpenseMode">Neue Zahlung</h2>
+              <button type="button" class="btn btn-ghost btn-xs js-hb-close" aria-label="Schließen">✕</button>
+            </div>
+            <input type="hidden" name="id" />
+            <input type="hidden" name="unit" id="hbExpenseUnit" value="shared" />
+            <input type="hidden" name="status" value="bezahlt" />
+            ${field("Auftrag", `<select name="main_category" id="hbExpenseMain" required></select>`, "full")}
+            ${field("Firma / Instanz", `<input type="text" name="sub_category" id="hbExpenseSub" list="hbFirmList" required autocomplete="off" placeholder="z. B. Gemeinde, Baumeister-Firma" />`)}
+            ${field("Datum", `<input type="date" name="date" required />`)}
+            ${field("Was wurde bezahlt", `<input type="text" name="title" required placeholder="z. B. 2. Teilrechnung" />`)}
+            ${field("Betrag (€)", `<input type="number" name="amount" step="0.01" min="0" required />`)}
+            ${field("Bezahlt von", `<select name="paid_by" id="hbExpensePaidBy">${options(PEOPLE, "max")}</select>`)}
+            ${field("Aufteilung", `<select name="allocation_key" id="hbExpenseKey"></select>`)}
+            <label id="hbShareField" hidden>Anteil Maximilian (%)<input type="number" name="share_max" id="hbExpenseShare" min="0" max="100" step="any" /></label>
+            ${field("Steuerbonus", `<select name="tax_bonus" id="hbExpenseTax">${options(TAX_BONUS, "keine")}</select>`)}
+            <p class="field-help full" id="hbExpenseSollHint"></p>
+            <details class="full hb-more">
+              <summary>Rechnungsnummer und Notiz</summary>
+              <div class="form-grid compact-form">
+                ${field("Rechnungsnummer", `<input type="text" name="invoice_no" />`)}
+                ${field("Notiz", `<input type="text" name="note" />`)}
+              </div>
+            </details>
+            <datalist id="hbFirmList"></datalist>
+            <div class="full actions-row">
+              <button class="btn btn-primary" type="submit">Zahlung speichern</button>
+              <button class="btn btn-ghost js-hb-close" type="button">Abbrechen</button>
+            </div>
+          </form>
+        </dialog>
       </div>
 
       <div class="hb-section" data-section="ingrid" hidden>
         <div class="hero-grid" id="hbIngridHero"></div>
         <div class="two-col">
+          <section class="card">
+            <div class="card-header">
+              <div><h2>Abrechnung Ingrid</h2><p>Alle Positionen, die den Saldo bewegen</p></div>
+              <button type="button" class="btn btn-ghost btn-xs" id="hbPrintStatement">Abrechnung drucken</button>
+            </div>
+            <div class="table-scroll"><table class="data-table" id="hbBalanceTable">
+              <thead><tr><th>Datum</th><th>Position</th><th class="num">Wirkung</th></tr></thead>
+              <tbody></tbody></table></div>
+          </section>
           <section class="card">
             <div class="card-header"><div><h2>Ausgleichszahlung</h2><p id="hbSettlementMode">Neue Zahlung zwischen dir und Ingrid</p></div></div>
             <form class="form-grid compact-form" data-entity="settlement">
@@ -666,83 +665,96 @@
               <thead><tr><th>Datum</th><th>Richtung</th><th class="num">Betrag</th><th>Aktion</th></tr></thead>
               <tbody></tbody></table></div>
           </section>
-          <section class="card">
-            <div class="card-header">
-              <div><h2>Abrechnung Ingrid</h2><p>Alle Positionen, die den Saldo bewegen</p></div>
-              <button type="button" class="btn btn-ghost btn-xs" id="hbPrintStatement">Abrechnung drucken</button>
-            </div>
-            <div class="table-scroll"><table class="data-table" id="hbBalanceTable">
-              <thead><tr><th>Datum</th><th>Position</th><th class="num">Wirkung</th></tr></thead>
-              <tbody></tbody></table></div>
-          </section>
         </div>
       </div>
 
       <div class="hb-section" data-section="loans" hidden>
-        <div class="hero-grid" id="hbLoanHero"></div>
+        <div class="hero-grid" id="hbFinanceHero"></div>
+        <section class="card">
+          <div class="card-header"><div><h2>Woher das Geld kommt</h2><p id="hbFinanceInfo">Nur dein Anteil. Ingrids Kosten werden nur mitgeführt.</p></div></div>
+          <div class="table-scroll"><table class="data-table" id="hbPotTable">
+            <thead><tr><th>Topf</th><th class="num">Verfügbar</th><th class="num">Wird gebraucht</th><th>Auslastung</th><th class="num">Bleibt</th></tr></thead>
+            <tbody></tbody></table></div>
+          <div class="table-scroll"><table class="data-table" id="hbAccountTable"><tbody></tbody></table></div>
+          <p class="field-help">Reihenfolge: zuerst Eigenmittel, dann das zinsbegünstigte Darlehen, dann die Förderung, das zweite Darlehen erst, wenn alles andere aufgebraucht ist. Die Rücklage bleibt immer stehen. Das ist eine Rechnung nach deinen Vorgaben, keine Finanzberatung.</p>
+        </section>
         <div id="hbLoanCards"></div>
-        <div class="two-col">
-          <section class="card">
-            <div class="card-header"><div><h2>Kredit / Förderung</h2><p id="hbLoanMode">Neuer Kredit, Förderdarlehen oder Zuschuss</p></div></div>
-            <form class="form-grid compact-form" data-entity="loan">
-              <input type="hidden" name="id" />
-              ${field("Bezeichnung", `<input type="text" name="title" required placeholder="z. B. Wohnbaukredit Bank" />`)}
-              ${field("Art", `<select name="loan_type">${options(LOAN_TYPES, "bank")}</select>`)}
-              ${field("Bank / Förderstelle", `<input type="text" name="lender" />`)}
-              ${field("Betrag (€)", `<input type="number" name="amount" step="0.01" min="0" required />`)}
-              ${field("Sollzins (% p. a.)", `<input type="number" name="interest_rate" step="0.001" min="0" />`)}
-              ${field("Zinsart", `<select name="rate_type">${options({ fix: "Fix", variabel: "Variabel" }, "fix")}</select>`)}
-              ${field("Zinsbindung bis (Monat)", `<input type="month" name="fixed_until" />`)}
-              ${field("Laufzeit (Monate)", `<input type="number" name="term_months" min="0" step="1" />`)}
-              ${field("Monatliche Rate (€)", `<input type="number" name="monthly_rate" step="0.01" min="0" />`)}
-              ${field("Erste Rate (Monat)", `<input type="month" name="first_rate_month" />`)}
-              ${field("Bereitstellungsprovision (% p. a.)", `<input type="number" name="commitment_fee_rate" step="0.01" min="0" />`)}
-              ${field("Provisionsfreie Monate", `<input type="number" name="commitment_free_months" min="0" step="1" />`)}
-              ${field("Dein Anteil (%)", `<input type="number" name="share_max" min="0" max="100" step="any" placeholder="100" />`)}
-              ${field("Notiz", `<input type="text" name="note" />`)}
-              ${field("Förderauflagen / Nachweise", `<input type="text" name="conditions" placeholder="z. B. Endabrechnung, Hauptwohnsitz-Nachweis" />`)}
-              ${field("Frist für Auflagen", `<input type="date" name="conditions_due" />`)}
-              <p class="field-help full">Bei einem Zuschuss für das gemeinsame Projekt trägt „Dein Anteil“ z. B. den Nutzflächen-Anteil. Der Rest gehört Ingrid und erscheint in ihrer Abrechnung.</p>
-              ${formButtons("loan", "Speichern")}
-            </form>
-          </section>
-          <section class="card">
-            <div class="card-header"><div><h2>Bewegung</h2><p id="hbLoanEventMode">Auszahlung, Sondertilgung, Zinsänderung …</p></div></div>
-            <form class="form-grid compact-form" data-entity="loanEvent">
-              <input type="hidden" name="id" />
-              ${field("Kredit / Förderung", `<select name="loan_id" id="hbEventLoan" required></select>`)}
-              ${field("Datum", `<input type="date" name="date" required />`)}
-              ${field("Art", `<select name="event_type">${options(EVENT_TYPES, "auszahlung")}</select>`)}
-              ${field("Betrag (€)", `<input type="number" name="amount" step="0.01" />`)}
-              ${field("Neuer Zinssatz (% p. a.)", `<input type="number" name="interest_rate" step="0.001" min="0" />`)}
-              ${field("Neue Rate (€)", `<input type="number" name="monthly_rate" step="0.01" min="0" />`)}
-              ${field("Notiz", `<input type="text" name="note" />`, "full")}
-              <p class="field-help full">Ohne erfasste Auszahlung wird der volle Betrag im ersten Monat angenommen. „Saldo laut Bank“ setzt die Restschuld auf den Wert der Bank.</p>
-              ${formButtons("loanEvent", "Bewegung speichern")}
-            </form>
-            <div class="table-scroll"><table class="data-table" id="hbEventTable">
-              <thead><tr><th>Datum</th><th>Kredit</th><th>Art</th><th class="num">Betrag</th><th>Aktion</th></tr></thead>
-              <tbody></tbody></table></div>
-          </section>
-        </div>
+        <details class="card hb-more" id="hbFinanceSetup">
+          <summary>Kontostand und Finanzierung eintragen</summary>
+          <form class="form-grid compact-form" data-entity="finance" id="hbFinanceForm">
+            ${field("Kontostand (€)", `<input type="number" name="account_balance" step="0.01" required />`)}
+            ${field("Stand am", `<input type="date" name="account_date" required />`)}
+            ${field("Davon Darlehen auf dem Konto (€)", `<input type="number" name="loan_on_account" step="0.01" min="0" />`)}
+            ${field("Rücklage, bleibt immer (€)", `<input type="number" name="reserve" step="0.01" min="0" />`)}
+            ${field("Förderung erwartet (€)", `<input type="number" name="grant_amount" step="0.01" min="0" />`)}
+            ${field("Förderung erwartet ab (Monat)", `<input type="month" name="grant_month" />`)}
+            ${field("Zweites Darlehen, falls nötig (€)", `<input type="number" name="second_loan" step="0.01" min="0" />`)}
+            <p class="field-help full">Den Kontostand trägst du einmal ein. Ab dann rechnet Nomia selbst weiter: deine Einnahmen und Ausgaben im Haushalt, deine Hausbau-Zahlungen und Ausgleichszahlungen mit Ingrid. Du kannst ihn jederzeit neu eintragen.</p>
+            <div class="full actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
+          </form>
+        </details>
+        <details class="card hb-more">
+          <summary>Kredite und Förderungen bearbeiten</summary>
+          <div class="two-col">
+            <section>
+              <h3 id="hbLoanMode">Neuer Kredit, Förderdarlehen oder Zuschuss</h3>
+              <form class="form-grid compact-form" data-entity="loan">
+                <input type="hidden" name="id" />
+                ${field("Bezeichnung", `<input type="text" name="title" required placeholder="z. B. Zinsbegünstigtes Darlehen" />`)}
+                ${field("Art", `<select name="loan_type">${options(LOAN_TYPES, "bank")}</select>`)}
+                ${field("Bank / Förderstelle", `<input type="text" name="lender" />`)}
+                ${field("Betrag (€)", `<input type="number" name="amount" step="0.01" min="0" required />`)}
+                ${field("Sollzins (% p. a.)", `<input type="number" name="interest_rate" step="0.001" min="0" />`)}
+                ${field("Zinsart", `<select name="rate_type">${options({ fix: "Fix", variabel: "Variabel" }, "fix")}</select>`)}
+                ${field("Zinsbindung bis (Monat)", `<input type="month" name="fixed_until" />`)}
+                ${field("Laufzeit (Monate)", `<input type="number" name="term_months" min="0" step="1" />`)}
+                ${field("Monatliche Rate (€)", `<input type="number" name="monthly_rate" step="0.01" min="0" />`)}
+                ${field("Erste Rate (Monat)", `<input type="month" name="first_rate_month" />`)}
+                ${field("Bereitstellungsprovision (% p. a.)", `<input type="number" name="commitment_fee_rate" step="0.01" min="0" />`)}
+                ${field("Provisionsfreie Monate", `<input type="number" name="commitment_free_months" min="0" step="1" />`)}
+                ${field("Dein Anteil (%)", `<input type="number" name="share_max" min="0" max="100" step="any" placeholder="100" />`)}
+                ${field("Notiz", `<input type="text" name="note" />`)}
+                ${field("Förderauflagen / Nachweise", `<input type="text" name="conditions" placeholder="z. B. Endabrechnung, Hauptwohnsitz-Nachweis" />`)}
+                ${field("Frist für Auflagen", `<input type="date" name="conditions_due" />`)}
+                <p class="field-help full">Mit Rate und erster Rate zählt der Kredit jeden Monat automatisch zu deinen Fixkosten.</p>
+                ${formButtons("loan", "Speichern")}
+              </form>
+            </section>
+            <section>
+              <h3 id="hbLoanEventMode">Bewegung: Auszahlung, Sondertilgung, Zinsänderung …</h3>
+              <form class="form-grid compact-form" data-entity="loanEvent">
+                <input type="hidden" name="id" />
+                ${field("Kredit / Förderung", `<select name="loan_id" id="hbEventLoan" required></select>`)}
+                ${field("Datum", `<input type="date" name="date" required />`)}
+                ${field("Art", `<select name="event_type">${options(EVENT_TYPES, "auszahlung")}</select>`)}
+                ${field("Betrag (€)", `<input type="number" name="amount" step="0.01" />`)}
+                ${field("Neuer Zinssatz (% p. a.)", `<input type="number" name="interest_rate" step="0.001" min="0" />`)}
+                ${field("Neue Rate (€)", `<input type="number" name="monthly_rate" step="0.01" min="0" />`)}
+                ${field("Notiz", `<input type="text" name="note" />`, "full")}
+                <p class="field-help full">Ohne erfasste Auszahlung wird der volle Betrag im ersten Monat angenommen. „Saldo laut Bank“ setzt die Restschuld auf den Wert der Bank.</p>
+                ${formButtons("loanEvent", "Bewegung speichern")}
+              </form>
+              <div class="table-scroll"><table class="data-table" id="hbEventTable">
+                <thead><tr><th>Datum</th><th>Kredit</th><th>Art</th><th class="num">Betrag</th><th>Aktion</th></tr></thead>
+                <tbody></tbody></table></div>
+            </section>
+          </div>
+        </details>
       </div>
 
       <div class="hb-section" data-section="settings" hidden>
         <div class="two-col">
           <section class="card">
-            <div class="card-header"><div><h2>Projekt</h2><p>Budget und Nutzflächen</p></div></div>
+            <div class="card-header"><div><h2>Projekt</h2><p>Name und Nutzflächen</p></div></div>
             <form class="form-grid compact-form" data-entity="project" id="hbProjectForm">
               <input type="hidden" name="id" />
-              ${field("Projektname", `<input type="text" name="title" required placeholder="z. B. Haus Musterweg" />`)}
+              ${field("Projektname", `<input type="text" name="title" required placeholder="z. B. Hintersun 8" />`)}
               ${field("Status", `<select name="status">${options({ planung: "Planung", bau: "Bau", fertig: "Fertig" }, "planung")}</select>`)}
-              ${field("Gesamtbudget (€)", `<input type="number" name="total_budget" step="0.01" min="0" />`)}
-              ${field("Budget Maximilian (€)", `<input type="number" name="budget_max" step="0.01" min="0" />`)}
-              ${field("Budget Ingrid (€)", `<input type="number" name="budget_ingrid" step="0.01" min="0" />`)}
               ${field("Nutzfläche Maximilian (m²)", `<input type="number" name="area_max" step="0.01" min="0" placeholder="95" />`)}
               ${field("Nutzfläche Ingrid (m²)", `<input type="number" name="area_ingrid" step="0.01" min="0" placeholder="84" />`)}
               ${field("Baustart", `<input type="date" name="start_date" />`)}
               ${field("Fertigstellung", `<input type="date" name="end_date" />`)}
-              ${field("Notiz", `<input type="text" name="note" />`)}
+              ${field("Notiz", `<input type="text" name="note" />`, "full")}
               <div class="full actions-row"><button class="btn btn-primary" type="submit">Projekt speichern</button></div>
             </form>
           </section>
@@ -762,7 +774,7 @@
           </section>
         </div>
         <section class="card">
-          <div class="card-header"><div><h2>Gewerke und Firmen</h2><p>Jede Firma gehört zu genau einem Gewerk. Neue Firmen entstehen auch beim Erfassen einer Ausgabe.</p></div></div>
+          <div class="card-header"><div><h2>Gewerke und Firmen</h2><p>Jede Firma gehört zu genau einem Gewerk. Die Aufträge bringen ihre Firmen selbst mit.</p></div></div>
           <form class="form-grid compact-form" data-entity="category">
             <input type="hidden" name="id" />
             ${field("Gewerk", `<input type="text" name="main_category" required list="hbMainList" />`)}
@@ -791,6 +803,14 @@
       if (sectionBtn) {
         activeSection = sectionBtn.dataset.hbSection;
         showSection();
+        return;
+      }
+      if (event.target.closest("[data-hb-new-payment]")) {
+        openExpenseForm();
+        return;
+      }
+      if (event.target.closest(".js-hb-close")) {
+        closeExpenseDialog();
         return;
       }
       const payBtn = event.target.closest("[data-hb-order-pay]");
@@ -845,22 +865,22 @@
 
     root.addEventListener("change", (event) => {
       const target = event.target;
-      if (target.id === "hbExpenseMain") fillExpenseSubcategories();
+      if (target.id === "hbExpenseMain") {
+        fillExpenseSubcategories();
+        applyOrderToForm();
+      }
       if (target.id === "hbExpenseSub") syncGewerkToFirm();
       if (["hbExpenseMain", "hbExpenseSub"].includes(target.id) || (target.name === "title" && target.closest('form[data-entity="expense"]'))) applyDefaultSplit();
-      if (target.id === "hbExpenseUnit") {
-        document.getElementById("hbExpenseKey").value = defaultKeyForUnit(target.value);
-        applyKeyToShare();
-      }
       if (target.id === "hbExpenseKey") applyKeyToShare();
       if (target.id === "hbExpenseShare") document.getElementById("hbExpenseKey").value = "CUSTOM";
-      if (target.id === "hbExpensePaidBy" || target.id === "hbExpenseFunding") updateFundingFields();
+      if (target.id === "hbExpenseMain") showSollHint();
       if (target.id && target.id.startsWith("hbFilter")) renderExpenseTable();
       if (target.dataset?.hbSplit) saveSplit(target);
     });
     root.addEventListener("input", (event) => {
       if (event.target.id === "hbFilterText") renderExpenseTable();
       if (event.target.id === "hbExpenseSub") syncGewerkToFirm();
+      if (event.target.name === "amount" && event.target.closest('form[data-entity="expense"]')) showSollHint();
     });
   }
 
@@ -872,25 +892,74 @@
       section.hidden = section.dataset.section !== activeSection;
     });
     requestAnimationFrame(() => {
-      ["hbCategoryChart", "hbTimelineChart"].concat(creditLoans().map((loan) => `hbLoanChart_${loan.id}`))
+      ["hbSollChart", "hbTimelineChart"].concat(creditLoans().map((loan) => `hbLoanChart_${loan.id}`))
         .forEach((name) => app().state.charts[name]?.resize?.());
     });
   }
 
+  /** The key sets share and Bauteil; the percent field only shows for an individual split. */
   function applyKeyToShare() {
     const keyId = document.getElementById("hbExpenseKey").value;
     const key = allocationKeys().find((entry) => entry.id === keyId);
     const share = document.getElementById("hbExpenseShare");
     if (key && key.share_max !== null) share.value = key.share_max;
+    document.getElementById("hbExpenseUnit").value = keyId === "MAX" ? "max" : keyId === "INGRID" ? "ingrid" : "shared";
+    document.getElementById("hbShareField").hidden = keyId !== "CUSTOM";
   }
 
-  function updateFundingFields() {
+  /** A new payment on an order takes its firm and tax bonus. */
+  function applyOrderToForm() {
+    if (editing.expense) return;
     const form = formFor("expense");
-    const paidByIngrid = form.elements.paid_by.value === "ingrid";
-    const funding = form.elements.funding_source;
-    funding.disabled = paidByIngrid;
-    const needsLoan = !paidByIngrid && ["kredit", "foerderung"].includes(funding.value);
-    form.elements.loan_id.disabled = !needsLoan;
+    const order = orderFor(form.elements.main_category.value);
+    if (!order) return;
+    if (order.firma) form.elements.sub_category.value = order.firma;
+    if (order.tax_bonus && TAX_BONUS[order.tax_bonus]) form.elements.tax_bonus.value = order.tax_bonus;
+  }
+
+  /** Under the form: what is left of the order's Soll after this payment. */
+  function showSollHint() {
+    const form = formFor("expense");
+    const hint = document.getElementById("hbExpenseSollHint");
+    if (!form || !hint) return;
+    const main = form.elements.main_category.value;
+    const order = orderFor(main);
+    if (!order || !(num(order.soll) > 0)) {
+      hint.textContent = main && !order ? "Für dieses Gewerk gibt es noch kein Soll aus der Hausbau-App." : "";
+      hint.classList.remove("hb-over");
+      return;
+    }
+    const before = expenses().filter((row) => isPaid(row) && row.main_category === main && row.id !== form.elements.id.value)
+      .reduce((sum, row) => sum + num(row.amount), 0);
+    const rest = num(order.soll) - before - num(form.elements.amount.value);
+    hint.textContent = rest >= -0.005
+      ? `Soll ${eur(num(order.soll))}, schon bezahlt ${eur(before)}. Nach dieser Zahlung offen: ${eur(rest)}.`
+      : `Soll ${eur(num(order.soll))}, schon bezahlt ${eur(before)}. Mit dieser Zahlung ${eur(-rest)} über dem Soll.`;
+    hint.classList.toggle("hb-over", rest < -0.005);
+  }
+
+  function expenseDialog() {
+    return document.getElementById("hbExpenseDialog");
+  }
+
+  function showExpenseDialog() {
+    const dialog = expenseDialog();
+    if (!dialog) return;
+    if (typeof dialog.showModal === "function") {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      dialog.setAttribute("open", "");
+    }
+    showSollHint();
+  }
+
+  function closeExpenseDialog() {
+    resetForm("expense");
+    const dialog = expenseDialog();
+    if (dialog?.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
   }
 
   /** Firm suggestions: the firms of the chosen Gewerk first, then all others. */
@@ -913,8 +982,8 @@
     if (!fields) return;
     form.elements.unit.value = fields.unit;
     document.getElementById("hbExpenseKey").value = fields.allocation_key;
+    applyKeyToShare();
     if (fields.allocation_key === "CUSTOM") document.getElementById("hbExpenseShare").value = fields.share_max;
-    else applyKeyToShare();
   }
 
   /** A known firm always books on its own Gewerk. */
@@ -940,10 +1009,7 @@
     const entity = form.dataset.entity;
     const record = formValues(form);
     if (entity === "expense") {
-      if (record.paid_by === "ingrid") {
-        record.funding_source = "";
-        record.loan_id = "";
-      }
+      record.status = "bezahlt";
       record.sub_category = String(record.sub_category || "").trim();
       const owner = gewerkOfFirm(record.sub_category);
       const order = orderFor(record.main_category);
@@ -955,7 +1021,7 @@
       record.vendor = record.sub_category;
       record.trade = record.main_category;
       // Payments should stay within the house app's Soll; a supplement is still possible.
-      if (order && num(order.soll) > 0 && (record.status || "bezahlt") === "bezahlt") {
+      if (order && num(order.soll) > 0) {
         const before = expenses().filter((row) => isPaid(row) && row.main_category === record.main_category && row.id !== record.id)
           .reduce((sum, row) => sum + num(row.amount), 0);
         const over = before + num(record.amount) - num(order.soll);
@@ -965,14 +1031,20 @@
         record.share_max = allocationKeys().find((key) => key.id === record.allocation_key)?.share_max ?? 100;
       }
     }
+    if (entity === "finance") {
+      // The financing plan lives on the project row, next to name and areas.
+      const current = project();
+      Object.assign(record, { id: current.id || "", title: current.title || "Hintersun 8" });
+    }
     if (entity === "project" && !record.id) delete record.id;
     if (!record.id) delete record.id;
     const button = form.querySelector('button[type="submit"]');
     if (button) button.disabled = true;
     try {
       app().clearMessage();
-      const result = await app().apiPost("hausbauSave", { entity, record });
-      resetForm(entity);
+      const result = await app().apiPost("hausbauSave", { entity: entity === "finance" ? "project" : entity, record });
+      if (entity === "expense") closeExpenseDialog();
+      else resetForm(entity);
       await app().refreshAfterWrite(result);
       app().showMessage(record.id ? "Hausbau-Eintrag aktualisiert." : "Hausbau-Eintrag gespeichert.", "success");
     } catch (error) {
@@ -1016,9 +1088,17 @@
       element.value = record[element.name] ?? "";
     });
     if (entity === "expense" && !form.elements.sub_category.value) form.elements.sub_category.value = record.vendor || "";
-    if (entity === "expense") updateFundingFields();
     editing[entity] = id;
+    if (entity === "expense") {
+      const keyed = allocationKeys().some((key) => key.id === record.allocation_key);
+      if (!keyed) form.elements.allocation_key.value = "CUSTOM";
+      document.getElementById("hbShareField").hidden = form.elements.allocation_key.value !== "CUSTOM";
+      setText("hbExpenseMode", "Zahlung bearbeiten");
+      showExpenseDialog();
+      return;
+    }
     form.querySelector(".js-hb-cancel")?.style.removeProperty("display");
+    if (entity === "loan" || entity === "loanEvent") form.closest("details")?.setAttribute("open", "");
     form.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -1030,15 +1110,20 @@
       fillProjectForm();
       return;
     }
+    if (entity === "finance") {
+      fillFinanceForm();
+      return;
+    }
     form.reset();
     if (form.elements.id) form.elements.id.value = "";
     if (form.elements.date) form.elements.date.value = app().todayDate();
     form.querySelector(".js-hb-cancel")?.style.setProperty("display", "none");
     if (entity === "expense") {
       fillExpenseSubcategories();
-      document.getElementById("hbExpenseKey").value = defaultKeyForUnit(form.elements.unit.value);
+      document.getElementById("hbExpenseKey").value = defaultKeyForUnit("shared");
       applyKeyToShare();
-      updateFundingFields();
+      setText("hbExpenseMode", "Neue Zahlung");
+      setText("hbExpenseSollHint", "");
     }
   }
 
@@ -1047,6 +1132,21 @@
     const p = project();
     [...form.elements].forEach((element) => {
       if (element.name) element.value = p[element.name] ?? (element.tagName === "SELECT" ? element.options[0]?.value : "");
+    });
+  }
+
+  /** Defaults Maximilian gave for his financing plan; the balance itself he enters once. */
+  const FINANCE_DEFAULTS = { reserve: 10000, loan_on_account: 250000, grant_amount: 28000, grant_month: "2028-04", second_loan: 180000 };
+
+  function fillFinanceForm() {
+    const form = formFor("finance");
+    if (!form) return;
+    const p = project();
+    [...form.elements].forEach((element) => {
+      if (!element.name) return;
+      const value = p[element.name];
+      element.value = value !== "" && value != null ? String(value).slice(0, element.type === "month" ? 7 : element.type === "date" ? 10 : undefined)
+        : element.name === "account_date" ? app().todayDate() : FINANCE_DEFAULTS[element.name] ?? "";
     });
   }
 
@@ -1062,6 +1162,8 @@
     if (dashboardCard) dashboardCard.hidden = !visible;
     const quickAdd = document.querySelector('#quickAddSelect option[data-hausbau]');
     if (quickAdd) quickAdd.hidden = !visible;
+    // Payments still to take over (household Hausbau bookings, old dashboard rows) are done on their own.
+    if (visible) setTimeout(() => window.HausbauImport?.finish(), 0);
     if (!visible && panel?.classList.contains("active")) {
       document.querySelector('.nav-btn[data-tab="dashboard"]')?.click();
     }
@@ -1076,8 +1178,10 @@
       buildSkeleton(root);
       resetForm("expense");
       ["settlement", "loanEvent"].forEach(resetForm);
+      expenseDialog()?.addEventListener("close", () => resetForm("expense"));
     }
     if (!editing.project) fillProjectForm();
+    if (!document.getElementById("hbFinanceForm")?.contains(document.activeElement)) fillFinanceForm();
     setText("hbTitle", project().title ? `Hausbau – ${project().title}` : "Hausbau");
     refreshSelects();
     renderOverview();
@@ -1085,8 +1189,8 @@
     renderExpenseTable();
     renderIngrid();
     renderLoans();
+    renderFinance();
     renderSettings();
-    window.HausbauImport?.render();
     showSection();
   }
 
@@ -1098,136 +1202,118 @@
   function refreshSelects() {
     const cats = categoryMap();
     const mains = Object.keys(cats);
-    setOptions(document.getElementById("hbExpenseMain"), listOptions(mains, "", "—"));
+    // Orders first, labelled with their firm; then the other Gewerke.
+    const ordered = orders().map((order) => order.gewerk);
+    const mainOptions = (list) => list.map((main) => {
+      const order = orderFor(main);
+      return `<option value="${esc(main)}">${esc(order?.firma ? `${main} · ${order.firma}` : main)}</option>`;
+    }).join("");
+    setOptions(document.getElementById("hbExpenseMain"), `<option value="">Auftrag wählen</option>` +
+      (ordered.length ? `<optgroup label="Aufträge">${mainOptions(ordered)}</optgroup><optgroup label="Weitere Gewerke">${mainOptions(mains.filter((main) => !ordered.includes(main)))}</optgroup>` : mainOptions(mains)));
     fillExpenseSubcategories();
     setOptions(document.getElementById("hbFilterMain"), listOptions(mains, "", "Alle Gewerke"));
     const keySelect = document.getElementById("hbExpenseKey");
     setOptions(keySelect, allocationKeys().map((key) => `<option value="${esc(key.id)}">${esc(key.name)}</option>`).join(""));
     const allLoans = alive(data()?.loans);
     const loanOptions = allLoans.map((loan) => `<option value="${esc(loan.id)}">${esc(loan.title)} (${esc(LOAN_TYPES[loan.loan_type] || "")})</option>`).join("");
-    setOptions(document.getElementById("hbExpenseLoan"), `<option value="">—</option>${loanOptions}`);
     setOptions(document.getElementById("hbEventLoan"), loanOptions || `<option value="">Zuerst einen Kredit anlegen</option>`);
     document.getElementById("hbMainList").innerHTML = mains.map((main) => `<option value="${esc(main)}"></option>`).join("");
   }
 
+  /** Soll and rest over the orders with a Soll; Maximilian's part of the rest follows each order's split. */
+  function orderTotals() {
+    const paid = paidByGewerk();
+    const totals = { soll: 0, paidOnSoll: 0, rest: 0, restMax: 0, withoutSoll: 0 };
+    orders().forEach((order) => {
+      const soll = num(order.soll);
+      if (!(soll > 0)) {
+        totals.withoutSoll += 1;
+        return;
+      }
+      const bezahlt = paid[order.gewerk] || 0;
+      const open = Math.max(0, soll - bezahlt);
+      const share = order.share_max === "" || order.share_max == null ? 100 : num(order.share_max);
+      totals.soll += soll;
+      totals.paidOnSoll += Math.min(soll, bezahlt);
+      totals.rest += open;
+      totals.restMax += open * share / 100;
+    });
+    return totals;
+  }
+
+  /** Paid amounts with a tax bonus, Maximilian's part, per bonus. */
+  function taxBonusShares() {
+    const byBonus = {};
+    expenses().filter(isPaid).forEach((row) => {
+      if (!row.tax_bonus || row.tax_bonus === "keine") return;
+      byBonus[row.tax_bonus] = (byBonus[row.tax_bonus] || 0) + expenseShares(row).max;
+    });
+    return { byBonus, total: Object.values(byBonus).reduce((sum, value) => sum + value, 0) };
+  }
+
   function renderOverview() {
-    const p = project();
-    const rows = expenses();
+    const rows = expenses().filter(isPaid);
     const sum = (list, pick) => list.reduce((total, row) => total + pick(row), 0);
-    const paid = rows.filter(isPaid);
-    const open = rows.filter((row) => !isPaid(row));
-    const total = sum(rows, (row) => num(row.amount));
-    const paidTotal = sum(paid, (row) => num(row.amount));
-    const maxTotal = sum(rows, (row) => expenseShares(row).max);
-    const ingridTotal = sum(rows, (row) => expenseShares(row).ingrid);
-    const budget = num(p.total_budget);
-    const restBudget = budget - total;
+    const paidTotal = sum(rows, (row) => num(row.amount));
+    const paidMax = sum(rows, (row) => expenseShares(row).max);
+    const totals = orderTotals();
+    const bonus = taxBonusShares();
     document.getElementById("hbOverviewHero").innerHTML = [
-      hero("Bezahlt", eur(paidTotal), `${paid.length} Rechnungen`),
-      hero("Offen / beauftragt", eur(total - paidTotal), `${open.length} Positionen`),
-      hero("Budget", budget ? eur(budget) : "—", budget ? `${restBudget >= 0 ? "Rest" : "Überschritten"}: ${eur(Math.abs(restBudget))} (${(total / budget * 100).toFixed(1)} % verplant)` : "In den Einstellungen festlegen"),
-      hero("Dein Anteil", eur(maxTotal), num(p.budget_max) ? `Budget ${eur(num(p.budget_max))}` : "inkl. offener Positionen"),
-      hero("Anteil Ingrid", eur(ingridTotal), num(p.budget_ingrid) ? `Budget ${eur(num(p.budget_ingrid))}` : "inkl. offener Positionen")
+      hero("Soll gesamt", totals.soll ? eur(totals.soll) : "—", totals.soll ? `${orders().length} Aufträge aus der Hausbau-App` : "kommt aus der Hausbau-App"),
+      hero("Bezahlt", eur(paidTotal), `${rows.length} Zahlungen${totals.soll ? ` · ${(totals.paidOnSoll / totals.soll * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 })} % vom Soll` : ""}`),
+      hero("Noch offen", totals.soll ? eur(totals.rest) : "—", totals.withoutSoll ? `${totals.withoutSoll} Gewerke noch ohne Soll` : "Rest aller Aufträge"),
+      hero("Dein Anteil", eur(paidMax), totals.soll ? `bezahlt · offen noch ${eur(totals.restMax)}` : "bezahlt"),
+      hero("Absetzbar (dein Anteil)", eur(bonus.total), Object.keys(bonus.byBonus).length
+        ? Object.keys(bonus.byBonus).map((key) => `${TAX_BONUS[key] || key} ${eur(bonus.byBonus[key])}`).join(" · ")
+        : "Zahlungen mit Steuerbonus")
     ].join("");
 
-    const today = app().todayDate();
-    const openRows = open.slice().sort((a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
-    document.querySelector("#hbOpenTable tbody").innerHTML = openRows.length
-      ? openRows.map((row) => {
-          const overdue = row.due_date && row.due_date < today;
-          return `<tr>
-            <td class="${overdue ? "hb-overdue" : ""}">${row.due_date ? esc(app().formatGermanDate(row.due_date)) : "—"}${overdue ? " (überfällig)" : ""}</td>
-            <td>${esc(row.title)}</td>
-            <td>${esc(row.vendor || "—")}</td>
-            <td><span class="pill">${esc(STATUS[row.status] || "")}</span></td>
-            <td class="num">${eur(num(row.amount))}</td>
-            <td class="num">${eur(expenseShares(row).max)}</td>
-            <td>${rowActions("expense", row.id)}</td>
-          </tr>`;
-        }).join("")
-      : empty(7, "Keine offenen Posten");
-
-    const byCategory = new Map();
-    rows.forEach((row) => {
-      const key = row.main_category || "Ohne Gewerk";
-      const entry = byCategory.get(key) || { total: 0, max: 0, ingrid: 0, open: 0 };
-      const shares = expenseShares(row);
-      entry.total += shares.amount;
-      entry.max += shares.max;
-      entry.ingrid += shares.ingrid;
-      if (!isPaid(row)) entry.open += shares.amount;
-      byCategory.set(key, entry);
-    });
-    const categories = [...byCategory.entries()].sort((a, b) => b[1].total - a[1].total);
-    document.querySelector("#hbCategoryTable tbody").innerHTML = categories.length
-      ? categories.map(([name, entry]) => `<tr><td>${esc(name)}</td><td class="num">${eur(entry.total)}</td><td class="num">${eur(entry.max)}</td><td class="num">${eur(entry.ingrid)}</td><td class="num">${eur(entry.open)}</td></tr>`).join("")
-      : empty(5);
-
-    const funding = { eigenmittel: 0, kredit: 0, foerderung: 0 };
-    let ingridDirect = 0;
-    paid.forEach((row) => {
-      if (row.paid_by === "ingrid") ingridDirect += num(row.amount);
-      else funding[row.funding_source || "eigenmittel"] += num(row.amount);
-    });
-    const units = { max: 0, ingrid: 0, shared: 0 };
-    rows.forEach((row) => { units[row.unit || "shared"] += num(row.amount); });
-    const fundingRows = [
-      ["Maximilian aus Eigenmitteln", funding.eigenmittel],
-      ["Maximilian aus Kredit", funding.kredit],
-      ["Maximilian aus Förderung", funding.foerderung],
-      ["Direkt von Ingrid bezahlt", ingridDirect],
-      ["Wohnung Maximilian (Bauteil)", units.max],
-      ["Wohnung Ingrid (Bauteil)", units.ingrid],
-      ["Gemeinsame Teile (Bauteil)", units.shared]
-    ];
-    document.querySelector("#hbFundingTable tbody").innerHTML =
-      fundingRows.map(([label, value]) => `<tr><td>${esc(label)}</td><td class="num">${eur(value)}</td></tr>`).join("");
-
-    const vendors = new Map();
-    rows.filter((row) => row.vendor).forEach((row) => {
-      const entry = vendors.get(row.vendor) || { count: 0, total: 0 };
-      entry.count += 1;
-      entry.total += num(row.amount);
-      vendors.set(row.vendor, entry);
-    });
-    const topVendors = [...vendors.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10);
-    document.querySelector("#hbVendorTable tbody").innerHTML = topVendors.length
-      ? topVendors.map(([vendor, entry]) => `<tr><td>${esc(vendor)}</td><td class="num">${entry.count}</td><td class="num">${eur(entry.total)}</td></tr>`).join("")
-      : empty(3, "Noch keine Firmen erfasst");
-
-    app().ensureChart("hbCategoryChart", "hbCategoryChart", {
+    // Soll against paid per Gewerk: orders first (largest Soll on top), then Gewerke paid without Soll.
+    const paid = paidByGewerk();
+    const list = orders().filter((order) => num(order.soll) > 0)
+      .sort((a, b) => num(b.soll) - num(a.soll))
+      .map((order) => ({ main: order.gewerk, soll: num(order.soll), paid: paid[order.gewerk] || 0 }));
+    const known = new Set(list.map((entry) => entry.main));
+    Object.keys(paid).filter((main) => main && !known.has(main)).sort((a, b) => paid[b] - paid[a])
+      .forEach((main) => list.push({ main, soll: 0, paid: paid[main] }));
+    const box = document.getElementById("hbSollBox");
+    if (box) box.style.height = `${Math.max(220, list.length * 34 + 70)}px`;
+    setText("hbSollInfo", orders().length
+      ? "Soll aus der Hausbau-App, bezahlt aus deinen Zahlungen"
+      : "Sobald die Hausbau-App ihre Aufträge sendet, steht hier das Soll je Gewerk.");
+    app().ensureChart("hbSollChart", "hbSollChart", {
       type: "bar",
       data: {
-        labels: categories.map(([name]) => name),
+        labels: list.map((entry) => entry.main),
         datasets: [
-          { label: "Maximilian", data: categories.map(([, entry]) => round2(entry.max)), backgroundColor: "#4f8cff", stack: "a" },
-          { label: "Ingrid", data: categories.map(([, entry]) => round2(entry.ingrid)), backgroundColor: "#f2a65a", stack: "a" }
+          { label: "Soll", data: list.map((entry) => round2(entry.soll)), backgroundColor: "#3a3f47" },
+          { label: "Bezahlt", data: list.map((entry) => round2(entry.paid)), backgroundColor: list.map((entry) => entry.soll && entry.paid > entry.soll + 0.005 ? "#f28b82" : "#5fd3a6") }
         ]
       },
-      options: { indexAxis: "y", scales: { x: { stacked: true }, y: { stacked: true } } }
+      options: { indexAxis: "y", maintainAspectRatio: false, scales: { y: { ticks: { autoSkip: false } } } }
     });
 
     const months = [...new Set(rows.map((row) => monthKey(row.date)).filter(Boolean))].sort();
     let running = 0;
-    let runningPaid = 0;
     const cumulative = months.map((month) => {
       running += sum(rows.filter((row) => monthKey(row.date) === month), (row) => num(row.amount));
       return round2(running);
-    });
-    const cumulativePaid = months.map((month) => {
-      runningPaid += sum(paid.filter((row) => monthKey(row.date) === month), (row) => num(row.amount));
-      return round2(runningPaid);
     });
     app().ensureChart("hbTimelineChart", "hbTimelineChart", {
       type: "line",
       data: {
         labels: months.map(monthLabel),
-        datasets: [
-          { label: "Gesamt (inkl. offen)", data: cumulative, borderColor: "#8fa4c8" },
-          { label: "Bezahlt", data: cumulativePaid, borderColor: "#4f8cff" }
-        ].concat(budget ? [{ label: "Budget", data: months.map(() => budget), borderColor: "#e5484d", borderDash: [6, 4], pointRadius: 0 }] : [])
+        datasets: [{ label: "Bezahlt", data: cumulative, borderColor: "#5fd3a6" }]
       }
     });
+
+    document.querySelector("#hbRecentTable tbody").innerHTML = rows.length
+      ? rows.slice(0, 6).map((row) => `<tr>
+          <td>${esc(app().formatGermanDate(row.date))}</td>
+          <td>${esc(row.title)}<div class="text-muted">${esc([row.main_category, row.sub_category].filter(Boolean).join(" · "))}</div></td>
+          <td class="num">${eur(num(row.amount))}</td>
+        </tr>`).join("")
+      : empty(3, "Noch keine Zahlungen");
   }
 
   /** Split picker for one expense; a share no key matches stays as "Individuell". */
@@ -1247,11 +1333,14 @@
     return { unit: keyId === "MAX" ? "max" : keyId === "INGRID" ? "ingrid" : "shared", allocation_key: key.id, share_max: key.share_max };
   }
 
-  /** Saves an existing expense with some fields changed; sends the fields the form would send. */
+  /** Fields of a payment as the form sends them; the server keeps every other column. */
+  const EXPENSE_FIELDS = ["date", "title", "sub_category", "main_category", "unit", "allocation_key", "share_max",
+    "amount", "status", "paid_by", "tax_bonus", "invoice_no", "note"];
+
+  /** Saves an existing expense with some fields changed (works before the tab was ever opened). */
   function saveExpenseFields(row, changes) {
-    const names = [...formFor("expense").elements].map((element) => element.name).filter(Boolean);
     const record = {};
-    names.forEach((name) => { if (name in row) record[name] = row[name] ?? ""; });
+    EXPENSE_FIELDS.forEach((name) => { if (name in row) record[name] = row[name] ?? ""; });
     Object.assign(record, changes, { id: row.id });
     return app().apiPost("hausbauSave", { entity: "expense", record });
   }
@@ -1323,38 +1412,33 @@
   function renderExpenseTable() {
     const filters = {
       main: document.getElementById("hbFilterMain")?.value || "",
-      unit: document.getElementById("hbFilterUnit")?.value || "",
-      status: document.getElementById("hbFilterStatus")?.value || "",
       paidBy: document.getElementById("hbFilterPaidBy")?.value || "",
       text: (document.getElementById("hbFilterText")?.value || "").trim().toLowerCase()
     };
     const rows = expenses().filter((row) =>
       (!filters.main || row.main_category === filters.main) &&
-      (!filters.unit || row.unit === filters.unit) &&
-      (!filters.status || (row.status || "bezahlt") === filters.status) &&
       (!filters.paidBy || row.paid_by === filters.paidBy) &&
-      (!filters.text || [row.title, row.vendor, row.trade, row.invoice_no, row.note].join(" ").toLowerCase().includes(filters.text))
+      (!filters.text || [row.title, row.vendor, row.sub_category, row.main_category, row.invoice_no, row.note].join(" ").toLowerCase().includes(filters.text))
     );
     const total = rows.reduce((sum, row) => sum + num(row.amount), 0);
-    setText("hbExpenseCount", `${rows.length} Einträge · ${eur(total)}`);
+    setText("hbExpenseCount", `${rows.length} Zahlungen · ${eur(total)}`);
     document.querySelector("#hbExpenseTable tbody").innerHTML = rows.length
       ? rows.map((row) => {
           const shares = expenseShares(row);
-          const source = row.paid_by === "ingrid" ? "Ingrid" : `Maximilian · ${FUNDING[row.funding_source] || "Eigenmittel"}`;
+          const open = isPaid(row) ? "" : ` <span class="pill">${esc(STATUS[row.status] || "")}</span>`;
           return `<tr>
             <td>${esc(app().formatGermanDate(row.date))}</td>
-            <td>${esc(row.title)}${row.invoice_no ? `<div class="text-muted">${esc(row.invoice_no)}</div>` : ""}</td>
+            <td>${esc(row.title)}${open}${row.invoice_no ? `<div class="text-muted">${esc(row.invoice_no)}</div>` : ""}</td>
             <td>${esc(row.main_category || "—")}${row.sub_category ? `<div class="text-muted">${esc(row.sub_category)}</div>` : ""}</td>
             <td>${splitSelect(row)}</td>
             <td class="num">${eur(shares.amount)}</td>
             <td class="num">${eur(shares.max)}</td>
             <td class="num">${eur(shares.ingrid)}</td>
-            <td><span class="pill">${esc(STATUS[row.status] || "Bezahlt")}</span></td>
-            <td>${esc(source)}</td>
+            <td>${esc(PEOPLE[row.paid_by] || "Maximilian")}</td>
             <td>${rowActions("expense", row.id)}</td>
           </tr>`;
         }).join("")
-      : empty(10);
+      : empty(9, "Noch keine Zahlungen");
   }
 
   function renderIngrid() {
@@ -1384,18 +1468,6 @@
   function renderLoans() {
     const loans = creditLoans();
     const summaries = loans.map((loan) => ({ loan, summary: loanSummary(loan) }));
-    const totalBalance = summaries.reduce((sum, entry) => sum + entry.summary.balance, 0);
-    const currentCost = loanFixedCostRows(thisMonth()).reduce((sum, row) => sum + row.amount, 0);
-    const interestPaid = summaries.reduce((sum, entry) => sum + entry.summary.interestPaid, 0);
-    const principalPaid = summaries.reduce((sum, entry) => sum + entry.summary.principalPaid, 0);
-    const grantTotal = grants().reduce((sum, loan) => sum + grantReceived(loan), 0);
-    document.getElementById("hbLoanHero").innerHTML = [
-      hero("Offene Restschuld", eur(totalBalance), `${loans.length} Kredit(e)`),
-      hero("Monatliche Belastung", eur(currentCost), `zählt zu deinen Fixkosten · davon Tilgung ${eur(currentLoanSplit().principal)} (Vermögensaufbau)`),
-      hero("Bisher getilgt", eur(principalPaid), `Zinsen bisher ${eur(interestPaid)}`),
-      hero("Zuschüsse erhalten", eur(grantTotal), `${grants().length} Zuschuss/Zuschüsse`)
-    ].join("");
-
     const cards = document.getElementById("hbLoanCards");
     cards.innerHTML = summaries.map(({ loan, summary }) => `
       <section class="card">
@@ -1407,6 +1479,7 @@
           ${rowActions("loan", loan.id)}
         </div>
         <div class="table-scroll"><table class="data-table"><tbody>
+          <tr><td>Getilgt</td><td>${summary.drawn > 0 ? `<div class="hb-progress" role="img" aria-label="${Math.round(summary.principalPaid / summary.drawn * 100)} % getilgt"><span style="width:${Math.min(100, summary.principalPaid / summary.drawn * 100).toFixed(1)}%"></span></div><div class="text-muted">${eur(summary.principalPaid)} von ${eur(summary.drawn)}</div>` : "—"}</td></tr>
           <tr><td>Restschuld heute</td><td class="num">${eur(summary.balance)}</td></tr>
           <tr><td>Ausbezahlt / noch abrufbar</td><td class="num">${eur(summary.drawn)} / ${eur(summary.available)}</td></tr>
           <tr><td>Monatliche Belastung (dieser Monat)</td><td class="num">${eur(summary.currentCost)}</td></tr>
@@ -1463,6 +1536,109 @@
       : empty(5);
   }
 
+  /**
+   * Maximilian's financing, in his order: Eigenmittel, the loan already on the account, the
+   * grant, the second loan last. The balance he entered once is carried on with what Nomia
+   * knows since that day: the household month by month (income minus his share of all costs,
+   * loan rates included), his Hausbau payments and the settlements with Ingrid.
+   */
+  function financePlan() {
+    const p = project();
+    const valueOr = (name) => (p[name] === "" || p[name] == null ? FINANCE_DEFAULTS[name] : num(p[name]));
+    const since = String(p.account_date || "").slice(0, 10);
+    const hasBalance = p.account_balance !== "" && p.account_balance != null && !!since;
+    const after = (row) => String(row.date || "").slice(0, 10) > since;
+    const firstMonth = hasBalance ? addMonths(monthKey(since), 1) : "";
+    let household = 0;
+    if (hasBalance) {
+      for (let month = firstMonth; month <= thisMonth(); month = addMonths(month, 1)) household += num(app().monthAvailable?.(month));
+    }
+    const hausbauPaid = hasBalance
+      ? expenses().filter((row) => isPaid(row) && row.paid_by !== "ingrid" && after(row)).reduce((sum, row) => sum + num(row.amount), 0)
+      : 0;
+    const settled = hasBalance
+      ? alive(data()?.settlements).filter(after).reduce((sum, row) => sum + (row.from_person === "ingrid" ? num(row.amount) : -num(row.amount)), 0)
+      : 0;
+    const start = num(p.account_balance);
+    const balance = round2(start + household - hausbauPaid + settled);
+    const reserve = valueOr("reserve");
+    const usable = Math.max(0, balance - reserve);
+    const loanLeft = Math.min(valueOr("loan_on_account"), usable);
+    const grantMonth = monthKey(p.grant_month) || FINANCE_DEFAULTS.grant_month;
+    const need = round2(orderTotals().restMax);
+    const pots = [
+      { name: "Eigenmittel", note: "Kontostand ohne Darlehen und Rücklage", available: usable - loanLeft },
+      { name: "Zinsbegünstigtes Darlehen", note: "noch nicht verbraucht, liegt auf dem Konto", available: loanLeft },
+      { name: "Förderung", note: `erwartet ab ${monthLabel(grantMonth)}`, available: valueOr("grant_amount") },
+      { name: "Zweites Darlehen", note: "nur wenn alles andere aufgebraucht ist", available: valueOr("second_loan") }
+    ];
+    let remaining = need;
+    pots.forEach((pot) => {
+      pot.used = Math.min(pot.available, remaining);
+      pot.left = pot.available - pot.used;
+      remaining -= pot.used;
+    });
+    return {
+      hasBalance, since, firstMonth, start, household, hausbauPaid, settled, balance, reserve, usable, loanLeft,
+      grantMonth, need, pots,
+      gapBeforeGrant: Math.max(0, need - usable),
+      secondNeeded: pots[3].used,
+      uncovered: Math.max(0, remaining)
+    };
+  }
+
+  function renderFinance() {
+    const plan = financePlan();
+    const split = currentLoanSplit();
+    const hasLoan = creditLoans().length > 0;
+    document.getElementById("hbFinanceHero").innerHTML = [
+      hero("Kontostand heute", plan.hasBalance ? eur(plan.balance) : "—", plan.hasBalance
+        ? `gerechnet ab ${eur(plan.start)} am ${app().formatGermanDate(plan.since)}`
+        : "unten einmal eintragen"),
+      hero("Frei verfügbar", plan.hasBalance ? eur(plan.usable) : "—", `Rücklage ${eur(plan.reserve)} bleibt stehen`),
+      hero("Dein offener Anteil", eur(plan.need), "Rest aller Aufträge mit Soll"),
+      hero("Lücke bis zur Förderung", plan.hasBalance ? eur(plan.gapBeforeGrant) : "—", plan.gapBeforeGrant > 0.005
+        ? `bis ${monthLabel(plan.grantMonth)} zu überbrücken`
+        : "keine, das Geld auf dem Konto reicht"),
+      hero("Zweites Darlehen nötig", plan.hasBalance ? eur(plan.secondNeeded) : "—", plan.uncovered > 0.005
+        ? `${eur(plan.uncovered)} sind auch damit nicht gedeckt`
+        : plan.secondNeeded > 0.005 ? "nach Eigenmitteln, Darlehen und Förderung" : "nach heutigem Stand nicht"),
+      hero("Kreditrate diesen Monat", eur(split.cost), hasLoan ? `zählt zu deinen Fixkosten · davon Tilgung ${eur(split.principal)}` : "Kredit unten anlegen, dann zählt die Rate zu den Fixkosten")
+    ].join("");
+
+    const bar = (used, available) => {
+      const pct = available > 0 ? Math.min(100, used / available * 100) : 0;
+      return available > 0 ? `<div class="hb-progress" role="img" aria-label="${Math.round(pct)} % gebraucht"><span style="width:${pct.toFixed(1)}%"></span></div>` : "";
+    };
+    document.querySelector("#hbPotTable tbody").innerHTML = plan.pots.map((pot, index) => `<tr>
+        <td>${esc(pot.name)}<div class="text-muted">${esc(pot.note)}</div></td>
+        <td class="num">${plan.hasBalance || index > 1 ? eur(pot.available) : "—"}</td>
+        <td class="num">${eur(pot.used)}</td>
+        <td>${bar(pot.used, pot.available)}</td>
+        <td class="num">${eur(pot.left)}</td>
+      </tr>`).join("") + (plan.uncovered > 0.005
+        ? `<tr><td class="hb-over">Nicht gedeckt</td><td></td><td class="num hb-over">${eur(plan.uncovered)}</td><td></td><td></td></tr>`
+        : "");
+
+    const lines = plan.hasBalance ? [
+      [`Kontostand am ${app().formatGermanDate(plan.since)}`, plan.start],
+      [plan.firstMonth <= thisMonth() ? `Haushalt ${monthLabel(plan.firstMonth)} bis ${monthLabel(thisMonth())}: Einnahmen minus deine Ausgaben` : "Haushalt: ab nächstem Monat eingerechnet", plan.household],
+      ["Deine Hausbau-Zahlungen seit dem Stichtag", -plan.hausbauPaid],
+      ["Ausgleich mit Ingrid seit dem Stichtag", plan.settled],
+      ["Kontostand heute (gerechnet)", plan.balance, true],
+      ["Rücklage, bleibt immer", -plan.reserve],
+      ["Davon Darlehen, noch nicht verbraucht", -plan.loanLeft],
+      ["Eigenmittel frei", plan.pots[0].available, true]
+    ] : [];
+    document.querySelector("#hbAccountTable tbody").innerHTML = lines
+      .map(([label, value, strong]) => `<tr${strong ? ' class="hb-total"' : ""}><td>${esc(label)}</td><td class="num">${eur(value)}</td></tr>`).join("");
+    setText("hbFinanceInfo", plan.hasBalance
+      ? "Nur dein Anteil. Ingrids Kosten werden nur mitgeführt."
+      : "Trag unten einmal deinen Kontostand ein, dann rechnet Nomia die Töpfe aus. Nur dein Anteil, Ingrids Kosten werden nur mitgeführt.");
+    const setup = document.getElementById("hbFinanceSetup");
+    if (setup && !plan.hasBalance) setup.open = true;
+  }
+
   function renderSettings() {
     const keys = alive(data()?.keys);
     document.querySelector("#hbKeyTable tbody").innerHTML =
@@ -1482,26 +1658,32 @@
   function renderDashboardCard() {
     const card = document.getElementById("hausbauDashboardCard");
     if (!card || !data()) return;
-    const rows = expenses();
-    const total = rows.reduce((sum, row) => sum + num(row.amount), 0);
-    const mine = rows.reduce((sum, row) => sum + expenseShares(row).max, 0);
-    const budget = num(project().total_budget);
-    const balance = creditLoans().reduce((sum, loan) => sum + loanSummary(loan).balance, 0);
+    const paid = expenses().filter(isPaid);
+    const paidTotal = paid.reduce((sum, row) => sum + num(row.amount), 0);
+    const totals = orderTotals();
+    const plan = financePlan();
     const ingrid = ingridBalance().balance;
     const split = currentLoanSplit();
     const reminders = dueConditions();
+    const pct = totals.soll ? Math.min(100, totals.paidOnSoll / totals.soll * 100) : 0;
     card.innerHTML = `
       <div class="card-header">
         <div><h2>Hausbau</h2><p>Separat, nicht in den Monatskosten enthalten (nur die Kreditrate zählt)</p></div>
+        <button type="button" class="btn btn-ghost btn-xs" data-hb-open>Öffnen</button>
       </div>
+      ${totals.soll ? `<div class="hb-progress hb-progress-lg" role="img" aria-label="${Math.round(pct)} % vom Soll bezahlt"><span style="width:${pct.toFixed(1)}%"></span></div>
+      <p class="text-muted">${eur(paidTotal)} von ${eur(totals.soll)} bezahlt, offen ${eur(totals.rest)}</p>` : ""}
       <div class="hero-grid">
-        ${hero("Baukosten gesamt", eur(total), budget ? `von ${eur(budget)} Budget` : "kein Budget hinterlegt")}
-        ${hero("Dein Anteil", eur(mine), "inkl. offener Positionen")}
-        ${hero("Offene Restschuld", eur(balance), "deine Kredite")}
+        ${hero("Bezahlt", eur(paidTotal), totals.soll ? `Soll ${eur(totals.soll)}` : `${paid.length} Zahlungen`)}
+        ${hero("Dein offener Anteil", eur(plan.need), "Rest der Aufträge")}
+        ${hero(plan.hasBalance ? "Frei auf dem Konto" : "Kontostand", plan.hasBalance ? eur(plan.usable) : "—", plan.hasBalance
+          ? (plan.gapBeforeGrant > 0.005 ? `Lücke bis zur Förderung ${eur(plan.gapBeforeGrant)}` : `Rücklage ${eur(plan.reserve)} bleibt`)
+          : "im Hausbau unter Finanzierung eintragen")}
         ${hero(ingrid >= 0 ? "Ingrid schuldet dir" : "Du schuldest Ingrid", eur(Math.abs(ingrid)), "Ausgleichssaldo")}
-        ${hero("Kreditrate diesen Monat", eur(split.cost), `davon Tilgung ${eur(split.principal)} = Vermögensaufbau`)}
+        ${hero("Kreditrate diesen Monat", eur(split.cost), `davon Tilgung ${eur(split.principal)}`)}
       </div>
       ${reminders.length ? `<div class="alert warning">${reminders.map(({ loan, overdue }) => `${overdue ? "Überfällig" : "Bald fällig"}: ${esc(loan.title)} – ${esc(loan.conditions)} bis ${esc(app().formatGermanDate(loan.conditions_due))}`).join("<br>")}</div>` : ""}`;
+    card.querySelector("[data-hb-open]")?.addEventListener("click", () => document.querySelector('.nav-btn[data-tab="hausbau"]')?.click());
   }
 
   /* ---- statement for Ingrid (printed via the browser, free) -------------- */

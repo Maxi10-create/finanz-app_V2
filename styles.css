@@ -2078,7 +2078,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); 
 /* Kategorien neu ordnen */
 #categoryMigrationCard[hidden] { display: none; }
 #categoryMigrationCard { margin-top: 18px; }
-#categoryMigrationCard .cm-summary, #hbImportCard .cm-summary { margin: 12px 0; color: var(--muted-strong); }
+#categoryMigrationCard .cm-summary { margin: 12px 0; color: var(--muted-strong); }
 #categoryMigrationCard input { min-width: 150px; }
 .pill.cm-move { color: #8db4ff; border-color: rgba(141, 180, 255, 0.45); }
 .pill.cm-warn { color: #ffb4a8; border-color: rgba(255, 140, 120, 0.5); }
@@ -2111,10 +2111,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent-strong); 
 @media (max-width: 760px) { .trend-select, .trend-select select { width: 100%; } .trend-card canvas { height: 240px !important; } }
 .pill.cm-check { color: #ffd36b; border-color: rgba(255, 211, 107, 0.5); }
 #categoryMigrationCard .actions-row { flex-wrap: wrap; }
-#hbImportCard .actions-row { flex-wrap: wrap; }
-#hbImportCard label.btn { cursor: pointer; }
-#hbImportCard select { min-width: 150px; }
-#hbImportCard[hidden] { display: none; }
 
 /* =========================================================
    DESIGN NACHT -- Grafit, ein Akzent, ruhige Kacheln
@@ -2473,3 +2469,21 @@ img.brand-icon { display: block; padding: 0; border: 0; border-radius: 12px; bac
 .hb-progress.is-over span { background: #f28b82; }
 .hb-over { color: #f28b82; }
 #hbOrderTable tfoot td { font-weight: 600; border-top: 1px solid var(--border); }
+
+/* Hausbau: payment dialog, gear tab, Soll chart, financing */
+.hb-tab-gear { margin-left: auto; font-size: 16px; line-height: 1; }
+.hb-chart-box { position: relative; }
+.card .hb-chart-box canvas { height: 100% !important; }
+.hb-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); }
+.hb-dialog::backdrop { background: rgba(0, 0, 0, 0.55); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.hb-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hb-dialog-head h2 { margin: 0; font-size: 18px; }
+.hb-more > summary { cursor: pointer; color: var(--muted-strong); font-weight: 600; padding: 4px 0; }
+details.card.hb-more > summary { font-size: 15px; color: var(--text); }
+details.hb-more[open] > summary { margin-bottom: 12px; }
+#hbAccountTable { margin-top: 12px; }
+#hbAccountTable .hb-total td { font-weight: 600; border-top: 1px solid var(--border); }
+.hb-progress-lg { height: 12px; border-radius: 6px; margin: 4px 0 8px; }
+.hb-progress-lg span { border-radius: 6px; }
+#hausbauDashboardCard .hero-grid { margin-top: 12px; }
+@media (max-width: 760px) { .hb-dialog { padding: 16px; } }
