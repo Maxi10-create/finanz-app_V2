@@ -2466,3 +2466,10 @@ img.brand-icon { display: block; padding: 0; border: 0; border-radius: 12px; bac
   .month-switch { flex: 0 1 auto; margin-left: auto; gap: 2px; }
   .month-switch span { font-size: 0.95rem; text-align: center; white-space: nowrap; }
 }
+
+/* ---- Hausbau: Aufträge ---- */
+.hb-progress { width: 100%; min-width: 80px; height: 8px; border-radius: 4px; background: var(--raised); overflow: hidden; }
+.hb-progress span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.hb-progress.is-over span { background: #f28b82; }
+.hb-over { color: #f28b82; }
+#hbOrderTable tfoot td { font-weight: 600; border-top: 1px solid var(--border); }
