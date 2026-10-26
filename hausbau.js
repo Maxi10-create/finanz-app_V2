@@ -1580,8 +1580,14 @@
     const settled = hasBalance
       ? alive(data()?.settlements).filter(after).reduce((sum, row) => sum + (row.from_person === "ingrid" ? num(row.amount) : -num(row.amount)), 0)
       : 0;
+    // Everything Ingrid and Maximilian owe each other, from the first booking on: what she still owes
+    // him is money to come, what he owes her is money to go. Settlements are already in this sum.
+    const openWithIngrid = hasBalance
+      ? round2(ingridBalance().lines.filter((line) => line.date).reduce((sum, line) => sum + line.effect, 0))
+      : 0;
     const start = num(p.account_balance);
-    const balance = round2(start + household - hausbauPaid + settled);
+    // Settlements after the date are cash not yet in the balance; the sum above already has them as debts.
+    const balance = round2(start + household - hausbauPaid + openWithIngrid + settled);
     const reserve = valueOr("reserve");
     const usable = Math.max(0, balance - reserve);
     const loanLeft = Math.min(valueOr("loan_on_account"), usable);
@@ -1600,7 +1606,7 @@
       remaining -= pot.used;
     });
     return {
-      hasBalance, since, firstMonth, start, household, hausbauPaid, settled, balance, reserve, usable, loanLeft,
+      hasBalance, since, firstMonth, start, household, hausbauPaid, settled, openWithIngrid, balance, reserve, usable, loanLeft,
       grantMonth, need, pots,
       gapBeforeGrant: Math.max(0, need - usable),
       secondNeeded: pots[3].used,
@@ -1685,6 +1691,7 @@
       [`Kontostand am ${app().formatGermanDate(plan.since)}`, plan.start],
       [plan.firstMonth <= thisMonth() ? `Haushalt ${monthLabel(plan.firstMonth)} bis ${monthLabel(thisMonth())}: Einnahmen minus deine Ausgaben` : "Haushalt: ab nächstem Monat eingerechnet", plan.household],
       ["Deine Hausbau-Zahlungen seit dem Stichtag", -plan.hausbauPaid],
+      [plan.openWithIngrid >= 0 ? "Ingrid schuldet dir (offen)" : "Du schuldest Ingrid (offen)", plan.openWithIngrid],
       ["Ausgleich mit Ingrid seit dem Stichtag", plan.settled],
       ["Kontostand heute (gerechnet)", plan.balance, true],
       ["Rücklage, bleibt immer", -plan.reserve],
