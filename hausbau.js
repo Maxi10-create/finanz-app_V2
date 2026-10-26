@@ -45,7 +45,8 @@
     "Maler": ["Malerbetrieb Rogen Martin"],
     "Küche": ["Resch Möbel GmbH", "Stampfl Manfred & Co. KG"],
     "Dachbegrünung/Carport": ["Rasenfix GmbH"],
-    "Garten/Außenanlagen": []
+    "Garten/Außenanlagen": [],
+    "Finanzierungskosten": ["Bank & Kreditnotar"]
   };
   // Names used elsewhere (dashboard, bookings) for the same firm or office.
   const FIRM_ALIASES = [
@@ -57,6 +58,7 @@
     [/grundbuch|kataster/i, "Grundbuch & Kataster"],
     [/agentur der einnahmen|registersteuer/i, "Agentur der Einnahmen"],
     [/gemeinde|stempelmarke|sekretariatsgeb/i, "Gemeinde"],
+    [/kredit|darlehen|bankspes/i, "Bank & Kreditnotar"],
     [/notar/i, "Notarin"],
     [/e-?plan/i, "Studio E-Plan GZFB GmbH"],
     [/itas|haftpflicht/i, "ITAS Versicherung"]
@@ -66,7 +68,8 @@
     [(main, sub, text) => /schenkung/i.test(text), "MAX"],
     [(main, sub, text) => /haftpflicht|versicherung/i.test(`${sub} ${text}`), "MAX"],
     [(main) => main === "Bürokratie & Gebühren", "HALF"],
-    [(main) => main === "Technikerspesen", "PROMILLE"]
+    [(main) => main === "Technikerspesen", "PROMILLE"],
+    [(main) => main === "Finanzierungskosten", "MAX"]
   ];
   const MAX_LOAN_MONTHS = 600;
 
@@ -146,6 +149,33 @@
 
   function expenses() {
     return alive(data()?.expenses).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  /** Orders of the house app, one per Gewerk (Soll gross, split, status). */
+  function orders() {
+    return alive(data()?.orders);
+  }
+
+  function orderFor(main) {
+    return orders().find((order) => order.gewerk === main) || null;
+  }
+
+  /** Split fields of an order: its own key, or its share as an individual split. */
+  function orderSplit(order) {
+    if (!order || order.share_max === "" || order.share_max == null) return null;
+    const keyed = order.allocation_key ? splitFields(order.allocation_key) : null;
+    if (keyed) return keyed;
+    const share = num(order.share_max);
+    return { unit: share >= 100 ? "max" : share <= 0 ? "ingrid" : "shared", allocation_key: "CUSTOM", share_max: share };
+  }
+
+  /** Paid so far per Gewerk. */
+  function paidByGewerk() {
+    const sums = {};
+    expenses().filter(isPaid).forEach((row) => {
+      sums[row.main_category] = (sums[row.main_category] || 0) + num(row.amount);
+    });
+    return sums;
   }
 
   function expenseShares(row) {
@@ -395,12 +425,18 @@
     }, { cost: 0, principal: 0 });
   }
 
-  function openExpenseForm() {
+  function openExpenseForm(prefill) {
     if (!data()) return;
     activeSection = "expenses";
     showSection();
     resetForm("expense");
     const form = formFor("expense");
+    if (form && prefill?.main) {
+      form.elements.main_category.value = prefill.main;
+      fillExpenseSubcategories();
+      form.elements.sub_category.value = prefill.sub || "";
+      applyDefaultSplit();
+    }
     form?.scrollIntoView({ behavior: "smooth", block: "start" });
     form?.elements.title?.focus({ preventScroll: true });
   }
@@ -422,6 +458,7 @@
       add(main);
       DEFAULT_CATEGORIES[main].forEach((sub) => add(main, sub));
     });
+    orders().forEach((row) => add(row.gewerk, row.firma));
     alive(data()?.categories).forEach((row) => add(row.main_category, row.sub_category));
     alive(data()?.expenses).forEach((row) => add(row.main_category, row.sub_category));
     return map;
@@ -513,6 +550,7 @@
         </div>
         <div class="hb-subnav" id="hbSubnav">
           <button type="button" class="btn btn-ghost btn-xs hb-tab active" data-hb-section="overview">Übersicht</button>
+          <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="orders">Aufträge</button>
           <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="expenses">Ausgaben</button>
           <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="ingrid">Aufteilung Ingrid</button>
           <button type="button" class="btn btn-ghost btn-xs hb-tab" data-hb-section="loans">Kredit &amp; Förderung</button>
@@ -557,6 +595,15 @@
           <div class="table-scroll"><table class="data-table" id="hbVendorTable">
             <thead><tr><th>Firma</th><th class="num">Rechnungen</th><th class="num">Summe</th></tr></thead>
             <tbody></tbody></table></div>
+        </section>
+      </div>
+
+      <div class="hb-section" data-section="orders" hidden>
+        <section class="card">
+          <div class="card-header"><div><h2>Aufträge</h2><p id="hbOrderInfo"></p></div></div>
+          <div class="table-scroll"><table class="data-table" id="hbOrderTable">
+            <thead><tr><th>Gewerk · Firma</th><th>Status</th><th class="num">Soll</th><th class="num">Bezahlt</th><th class="num">Rest</th><th>Fortschritt</th><th>Aufteilung</th><th></th></tr></thead>
+            <tbody></tbody><tfoot></tfoot></table></div>
         </section>
       </div>
 
@@ -746,6 +793,12 @@
         showSection();
         return;
       }
+      const payBtn = event.target.closest("[data-hb-order-pay]");
+      if (payBtn) {
+        const order = orderFor(payBtn.dataset.hbOrderPay);
+        openExpenseForm({ main: payBtn.dataset.hbOrderPay, sub: order?.firma || "" });
+        return;
+      }
       const editBtn = event.target.closest("[data-hb-edit]");
       if (editBtn) {
         startEdit(editBtn.dataset.hbEdit, editBtn.dataset.id);
@@ -853,11 +906,15 @@
   function applyDefaultSplit() {
     if (editing.expense) return;
     const form = formFor("expense");
-    const fields = splitFields(defaultSplitKey(form.elements.main_category.value, form.elements.sub_category.value, form.elements.title.value));
+    const main = form.elements.main_category.value;
+    // The house app's split for its order wins over the rules.
+    const fields = orderSplit(orderFor(main)) ||
+      splitFields(defaultSplitKey(main, form.elements.sub_category.value, form.elements.title.value));
     if (!fields) return;
     form.elements.unit.value = fields.unit;
     document.getElementById("hbExpenseKey").value = fields.allocation_key;
-    applyKeyToShare();
+    if (fields.allocation_key === "CUSTOM") document.getElementById("hbExpenseShare").value = fields.share_max;
+    else applyKeyToShare();
   }
 
   /** A known firm always books on its own Gewerk. */
@@ -889,12 +946,21 @@
       }
       record.sub_category = String(record.sub_category || "").trim();
       const owner = gewerkOfFirm(record.sub_category);
-      if (owner && owner !== record.main_category) {
+      const order = orderFor(record.main_category);
+      const ordered = order && order.firma && order.firma === record.sub_category;
+      if (owner && owner !== record.main_category && !ordered) {
         app().showMessage(`${record.sub_category} gehört zum Gewerk ${owner}. Bitte dieses Gewerk wählen.`, "error");
         return;
       }
       record.vendor = record.sub_category;
       record.trade = record.main_category;
+      // Payments should stay within the house app's Soll; a supplement is still possible.
+      if (order && num(order.soll) > 0 && (record.status || "bezahlt") === "bezahlt") {
+        const before = expenses().filter((row) => isPaid(row) && row.main_category === record.main_category && row.id !== record.id)
+          .reduce((sum, row) => sum + num(row.amount), 0);
+        const over = before + num(record.amount) - num(order.soll);
+        if (over > 0.005 && !window.confirm(`${record.main_category}: Diese Zahlung überschreitet das Soll von ${eur(order.soll)} um ${eur(over)}. Trotzdem speichern?`)) return;
+      }
       if (record.share_max === "") {
         record.share_max = allocationKeys().find((key) => key.id === record.allocation_key)?.share_max ?? 100;
       }
@@ -1015,6 +1081,7 @@
     setText("hbTitle", project().title ? `Hausbau – ${project().title}` : "Hausbau");
     refreshSelects();
     renderOverview();
+    renderOrders();
     renderExpenseTable();
     renderIngrid();
     renderLoans();
@@ -1202,6 +1269,55 @@
       app().showMessage(error.message || "Speichern fehlgeschlagen.", "error");
       select.disabled = false;
     }
+  }
+
+  /** One row per Gewerk: the house app's orders, plus Gewerke that only have payments (no Soll). */
+  function renderOrders() {
+    const table = document.getElementById("hbOrderTable");
+    if (!table) return;
+    const paid = paidByGewerk();
+    const list = orders().map((order) => ({ order, main: order.gewerk }));
+    const known = new Set(list.map((entry) => entry.main));
+    Object.keys(paid).filter((main) => main && !known.has(main)).sort()
+      .forEach((main) => list.push({ order: null, main }));
+    const keys = allocationKeys();
+    const splitText = (order) => {
+      if (!order || order.share_max === "") return "—";
+      const key = keys.find((entry) => entry.id === order.allocation_key);
+      return key ? key.name : `Max ${num(order.share_max).toLocaleString("de-DE", { maximumFractionDigits: 1 })} %`;
+    };
+    let sumSoll = 0;
+    let sumPaid = 0;
+    let sumRest = 0;
+    table.querySelector("tbody").innerHTML = list.map(({ order, main }) => {
+      const soll = order && order.soll !== "" ? num(order.soll) : null;
+      const bezahlt = paid[main] || 0;
+      sumPaid += bezahlt;
+      if (soll !== null) sumSoll += soll;
+      const rest = soll === null ? null : soll - bezahlt;
+      if (rest !== null) sumRest += Math.max(0, rest);
+      const pct = soll ? Math.min(100, bezahlt / soll * 100) : 0;
+      const over = rest !== null && rest < -0.005;
+      const status = !order ? "ohne Soll" : order.status === "vergeben" ? "vergeben" : "geplant";
+      const firm = order?.firma || (order?.is_estimate === "ja" ? "Schätzung" : "");
+      return `<tr>
+        <td>${esc(main)}<div class="text-muted">${esc(firm || "—")}</div></td>
+        <td><span class="pill ${status === "vergeben" ? "cm-check" : ""}">${esc(status)}</span></td>
+        <td class="num">${soll === null ? "—" : eur(soll)}</td>
+        <td class="num">${eur(bezahlt)}</td>
+        <td class="num${over ? " hb-over" : ""}">${rest === null ? "—" : over ? `+${eur(-rest)} über Soll` : eur(rest)}</td>
+        <td>${soll ? `<div class="hb-progress${over ? " is-over" : ""}" role="img" aria-label="${Math.round(bezahlt / soll * 100)} % bezahlt"><span style="width:${pct.toFixed(1)}%"></span></div>` : ""}</td>
+        <td>${esc(splitText(order))}</td>
+        <td><button type="button" class="btn btn-ghost btn-xs" data-hb-order-pay="${esc(main)}">+ Zahlung</button></td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="8" class="text-muted">Noch keine Aufträge.</td></tr>`;
+    table.querySelector("tfoot").innerHTML = list.length
+      ? `<tr><td>Summe</td><td></td><td class="num">${eur(sumSoll)}</td><td class="num">${eur(sumPaid)}</td><td class="num">${eur(sumRest)}</td><td></td><td></td><td></td></tr>`
+      : "";
+    const synced = orders().map((order) => String(order.synced_at || "")).sort().pop();
+    setText("hbOrderInfo", orders().length
+      ? `Aus der Hausbau-App, Stand ${app().formatGermanDate(synced.slice(0, 10))}. Soll brutto, so wie bezahlt wird. Ändern nur in der Hausbau-App.`
+      : "Die Aufträge kommen automatisch aus der Hausbau-App, sobald sie mit Nomia verbunden ist.");
   }
 
   function renderExpenseTable() {

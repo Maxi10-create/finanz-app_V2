@@ -1,4 +1,4 @@
-const API_VERSION = 'v14-2026-10-25-gewerk-firma-split';
+const API_VERSION = 'v15-2026-10-26-auftraege';
 
 const PERSON_A = 'Maximilian Hofer';
 const PERSON_B = 'Jana March';
@@ -19,7 +19,8 @@ const SHEETS = {
   BUILD_KEYS: 'Build_Allocation_Keys',
   BUILD_SETTLEMENTS: 'Build_Settlements',
   LOANS: 'Loans',
-  LOAN_EVENTS: 'Loan_Events'
+  LOAN_EVENTS: 'Loan_Events',
+  BUILD_ORDERS: 'Build_Orders'
 };
 
 // Hausbau sheets share these audit columns (see Hausbau.gs).
@@ -114,6 +115,12 @@ const SCHEMAS = {
   [SHEETS.LOAN_EVENTS]: [
     'id', 'loan_id', 'date', 'month_key', 'event_type', 'amount',
     'interest_rate', 'monthly_rate', 'note'
+  ].concat(HAUSBAU_AUDIT_FIELDS),
+
+  // One row per Gewerk, written only by the house app (Hausbau.gs, syncHausbauOrders_).
+  [SHEETS.BUILD_ORDERS]: [
+    'id', 'gewerk', 'firma', 'soll', 'netto', 'share_max', 'allocation_key',
+    'status', 'tax_bonus', 'is_estimate', 'synced_at'
   ].concat(HAUSBAU_AUDIT_FIELDS)
 };
 
@@ -210,15 +217,15 @@ function doPost(e) {
     }
 
     const auth = authenticate_(body);
-    // The PersonalAI backend token may only read.
-    if (auth.kind === 'service' && action !== 'getall') {
+    // The backend token may read, and the house app may hand over its orders.
+    if (auth.kind === 'service' && action !== 'getall' && action !== 'hausbausyncorders') {
       throw new Error('unauthorized');
     }
     if (action === 'getall') {
       return jsonResponse({ success: true, version: API_VERSION, data: dataForAuth_(auth, getAllDataCached_()) });
     }
     // Hausbau and the category reorganisation are reserved to the owner (see Hausbau.gs).
-    if (action.indexOf('hausbau') === 0 || action.indexOf('category') === 0) {
+    if (action !== 'hausbausyncorders' && (action.indexOf('hausbau') === 0 || action.indexOf('category') === 0)) {
       assertHausbauAccess_(auth);
     }
     if (action === 'categoryinventory') {
@@ -412,6 +419,10 @@ function doPost(e) {
 
         case 'hausbauimport':
           result = importHausbauExpenses_(payload, auth);
+          break;
+
+        case 'hausbausyncorders':
+          result = syncHausbauOrders_(payload, auth);
           break;
 
         case 'categorymigrate':

@@ -83,7 +83,8 @@ function getHausbauData_() {
     keys: readSheetObjects_(SHEETS.BUILD_KEYS),
     settlements: readSheetObjects_(SHEETS.BUILD_SETTLEMENTS),
     loans: readSheetObjects_(SHEETS.LOANS),
-    loanEvents: readSheetObjects_(SHEETS.LOAN_EVENTS)
+    loanEvents: readSheetObjects_(SHEETS.LOAN_EVENTS),
+    orders: readSheetObjects_(SHEETS.BUILD_ORDERS)
   };
 }
 
@@ -125,6 +126,78 @@ function saveHausbauRecord_(payload, auth) {
   }
 
   return { record: serializeObject_(record, entity.sheet) };
+}
+
+/**
+ * payload = { orders: [{ gewerk, firma, soll, netto, share_max, status, tax_bonus, is_estimate }] }.
+ * The house app owns its orders: one row per Gewerk, the Soll gross as it is paid. Each run
+ * brings every Gewerk up to date and retires the ones the house app no longer counts.
+ * Allowed for the owner and for the backend token.
+ */
+function syncHausbauOrders_(payload, auth) {
+  if (!(auth && (auth.kind === 'service' || canSeeHausbau_(auth)))) throw new Error('Kein Zugriff auf diesen Bereich.');
+  const list = payload.orders;
+  if (!Array.isArray(list)) throw new Error('Keine Auftragsliste.');
+  const sheet = SHEETS.BUILD_ORDERS;
+  const by = auth.kind === 'service' ? 'Hausbau-App' : normalizePersonName_(auth.user.display_name);
+  const now = new Date();
+  const ALLOWED_STATUS = { vergeben: true, geplant: true };
+  const FIELDS = ['firma', 'soll', 'netto', 'share_max', 'allocation_key', 'status', 'tax_bonus', 'is_estimate'];
+
+  const incoming = {};
+  list.forEach(function (input) {
+    const gewerk = String(input.gewerk || '').trim();
+    if (!gewerk || incoming[gewerk]) return;
+    const soll = Number(input.soll);
+    const shareMax = Number(input.share_max);
+    incoming[gewerk] = {
+      gewerk: gewerk,
+      firma: String(input.firma || '').trim(),
+      soll: isFinite(soll) && soll > 0 ? Math.round(soll * 100) / 100 : '',
+      netto: isFinite(Number(input.netto)) ? Math.round(Number(input.netto) * 100) / 100 : '',
+      share_max: isFinite(shareMax) ? Math.max(0, Math.min(100, Math.round(shareMax * 100) / 100)) : '',
+      allocation_key: String(input.allocation_key || ''),
+      status: ALLOWED_STATUS[input.status] ? input.status : 'geplant',
+      tax_bonus: String(input.tax_bonus || 'keine'),
+      is_estimate: input.is_estimate ? 'ja' : 'nein'
+    };
+  });
+
+  let added = 0;
+  let updated = 0;
+  let retired = 0;
+  const seen = {};
+  readSheetObjects_(sheet).forEach(function (row) {
+    if (String(row.is_deleted || '').toLowerCase() === 'ja') return;
+    const next = incoming[row.gewerk];
+    if (!next || seen[row.gewerk]) {
+      updateObjectById_(sheet, 'id', row.id, { is_deleted: 'ja', updated_at: now, updated_by: by });
+      retired++;
+      return;
+    }
+    seen[row.gewerk] = true;
+    const changes = {};
+    FIELDS.forEach(function (field) {
+      if (String(row[field] == null ? '' : row[field]) !== String(next[field])) changes[field] = next[field];
+    });
+    changes.synced_at = now;
+    if (Object.keys(changes).length > 1) {
+      changes.updated_at = now;
+      changes.updated_by = by;
+      updated++;
+    }
+    updateObjectById_(sheet, 'id', row.id, changes);
+  });
+  Object.keys(incoming).forEach(function (gewerk) {
+    if (seen[gewerk]) return;
+    const record = Object.assign({}, incoming[gewerk], {
+      id: makeUniqueId_(sheet, 'id', 'BORD'),
+      synced_at: now, created_at: now, created_by: by, updated_at: now, updated_by: by, is_deleted: ''
+    });
+    appendByHeaders_(sheet, record);
+    added++;
+  });
+  return { added: added, updated: updated, retired: retired };
 }
 
 /** payload = { entity, id }. Soft delete, like the other finance sheets. */
