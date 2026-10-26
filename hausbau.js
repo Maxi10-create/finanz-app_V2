@@ -72,6 +72,8 @@
   const MAX_LOAN_MONTHS = 600;
 
   let activeSection = "overview";
+  // "max": Maximilian's part of everything; "all": the whole house with Ingrid's part.
+  let overviewScope = "max";
   let skeletonBuilt = false;
   const editing = {};
 
@@ -557,15 +559,20 @@
       </section>
 
       <div class="hb-section" data-section="overview">
-        <div class="hero-grid" id="hbOverviewHero"></div>
-        <section class="card">
-          <div class="card-header"><div><h2>Soll und bezahlt je Gewerk</h2><p id="hbSollInfo">Soll aus der Hausbau-App, bezahlt aus deinen Zahlungen</p></div></div>
-          <div class="hb-chart-box" id="hbSollBox"><canvas id="hbSollChart"></canvas></div>
+        <div class="hb-scope" role="group" aria-label="Ansicht">
+          <button type="button" class="hb-scope-btn active" data-hb-scope="max">Mein Anteil</button>
+          <button type="button" class="hb-scope-btn" data-hb-scope="all">Gesamt mit Ingrid</button>
+        </div>
+        <div class="hb-big" id="hbOverviewHero"></div>
+        <section class="card hb-fund">
+          <div class="card-header"><div><h2>Reicht mein Geld?</h2><p id="hbFundNote"></p></div></div>
+          <div class="hb-fundbar" id="hbFundBar" role="img" aria-label="Deckung deines offenen Anteils"></div>
+          <ul class="hb-legend" id="hbFundLegend"></ul>
         </section>
         <div class="chart-grid">
           <section class="card">
-            <div class="card-header"><div><h2>Verlauf</h2><p>Bezahlt, Monat für Monat aufsummiert</p></div></div>
-            <canvas id="hbTimelineChart"></canvas>
+            <div class="card-header"><div><h2>Meine Gewerke</h2><p id="hbGewerkInfo">Dein Anteil am Soll, bezahlt</p></div></div>
+            <div id="hbGewerkList"></div>
           </section>
           <section class="card">
             <div class="card-header">
@@ -805,6 +812,12 @@
         showSection();
         return;
       }
+      const scopeBtn = event.target.closest("[data-hb-scope]");
+      if (scopeBtn) {
+        overviewScope = scopeBtn.dataset.hbScope;
+        renderOverview();
+        return;
+      }
       if (event.target.closest("[data-hb-new-payment]")) {
         openExpenseForm();
         return;
@@ -905,7 +918,7 @@
       section.hidden = section.dataset.section !== activeSection;
     });
     requestAnimationFrame(() => {
-      ["hbSollChart", "hbTimelineChart"].concat(creditLoans().map((loan) => `hbLoanChart_${loan.id}`))
+      ["hbTimelineChart"].concat(creditLoans().map((loan) => `hbLoanChart_${loan.id}`))
         .forEach((name) => app().state.charts[name]?.resize?.());
     });
   }
@@ -1264,59 +1277,97 @@
     return { byBonus, total: Object.values(byBonus).reduce((sum, value) => sum + value, 0) };
   }
 
+  /** Paid and open amounts of one Gewerk, for the house or for Maximilian's part only. */
+  function gewerkRows(mine) {
+    const paid = {};
+    expenses().filter(isPaid).forEach((row) => {
+      const key = row.main_category || "";
+      paid[key] = (paid[key] || 0) + (mine ? expenseShares(row).max : num(row.amount));
+    });
+    const list = orders().filter((order) => num(order.soll) > 0).map((order) => {
+      const share = order.share_max === "" || order.share_max == null ? 100 : num(order.share_max);
+      const soll = mine ? num(order.soll) * share / 100 : num(order.soll);
+      return { main: order.gewerk, firm: order.firma || "", soll, paid: paid[order.gewerk] || 0 };
+    });
+    const known = new Set(list.map((entry) => entry.main));
+    Object.keys(paid).filter((main) => main && !known.has(main) && paid[main]).forEach((main) => {
+      list.push({ main, firm: "ohne Auftrag", soll: 0, paid: paid[main] });
+    });
+    return list.sort((a, b) => (b.soll || b.paid) - (a.soll || a.paid));
+  }
+
   function renderOverview() {
+    const mine = overviewScope === "max";
+    document.querySelectorAll("[data-hb-scope]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.hbScope === overviewScope);
+      btn.setAttribute("aria-pressed", String(btn.dataset.hbScope === overviewScope));
+    });
     const rows = expenses().filter(isPaid);
     const sum = (list, pick) => list.reduce((total, row) => total + pick(row), 0);
     const paidTotal = sum(rows, (row) => num(row.amount));
     const paidMax = sum(rows, (row) => expenseShares(row).max);
     const totals = orderTotals();
-    const bonus = taxBonusShares();
-    document.getElementById("hbOverviewHero").innerHTML = [
-      hero("Soll gesamt", totals.soll ? eur(totals.soll) : "—", totals.soll ? `${orders().length} Aufträge aus der Hausbau-App` : "kommt aus der Hausbau-App"),
-      hero("Bezahlt", eur(paidTotal), `${rows.length} Zahlungen${totals.soll ? ` · ${(totals.paidOnSoll / totals.soll * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 })} % vom Soll` : ""}`),
-      hero("Noch offen", totals.soll ? eur(totals.rest) : "—", totals.withoutSoll ? `${totals.withoutSoll} Gewerke noch ohne Soll` : "Rest aller Aufträge"),
-      hero("Dein Anteil", eur(paidMax), totals.soll ? `bezahlt · offen noch ${eur(totals.restMax)}` : "bezahlt"),
-      hero("Absetzbar (dein Anteil)", eur(bonus.total), Object.keys(bonus.byBonus).length
-        ? Object.keys(bonus.byBonus).map((key) => `${TAX_BONUS[key] || key} ${eur(bonus.byBonus[key])}`).join(" · ")
-        : "Zahlungen mit Steuerbonus")
-    ].join("");
+    const plan = financePlan();
+    const loans = creditLoans().map((loan) => loanSummary(loan));
+    const debt = loans.reduce((total, summary) => total + summary.balance, 0);
+    const drawn = loans.reduce((total, summary) => total + summary.drawn, 0);
+    const repaid = loans.reduce((total, summary) => total + summary.principalPaid, 0);
+    const pct = (value, of) => (of > 0 ? Math.min(100, value / of * 100) : 0);
 
-    // Soll against paid per Gewerk: orders first (largest Soll on top), then Gewerke paid without Soll.
-    const paid = paidByGewerk();
-    const list = orders().filter((order) => num(order.soll) > 0)
-      .sort((a, b) => num(b.soll) - num(a.soll))
-      .map((order) => ({ main: order.gewerk, soll: num(order.soll), paid: paid[order.gewerk] || 0 }));
-    const known = new Set(list.map((entry) => entry.main));
-    Object.keys(paid).filter((main) => main && !known.has(main)).sort((a, b) => paid[b] - paid[a])
-      .forEach((main) => list.push({ main, soll: 0, paid: paid[main] }));
-    const box = document.getElementById("hbSollBox");
-    if (box) box.style.height = `${Math.max(220, list.length * 34 + 70)}px`;
-    setText("hbSollInfo", orders().length
-      ? "Soll aus der Hausbau-App, bezahlt aus deinen Zahlungen"
-      : "Sobald die Hausbau-App ihre Aufträge sendet, steht hier das Soll je Gewerk.");
-    app().ensureChart("hbSollChart", "hbSollChart", {
-      type: "bar",
-      data: {
-        labels: list.map((entry) => entry.main),
-        datasets: [
-          { label: "Soll", data: list.map((entry) => round2(entry.soll)), backgroundColor: "#3a3f47" },
-          { label: "Bezahlt", data: list.map((entry) => round2(entry.paid)), backgroundColor: list.map((entry) => entry.soll && entry.paid > entry.soll + 0.005 ? "#f28b82" : "#5fd3a6") }
-        ]
-      },
-      options: { indexAxis: "y", maintainAspectRatio: false, scales: { y: { ticks: { autoSkip: false } } } }
-    });
+    const big = mine
+      ? [hero("Mein Anteil am ganzen Bau", eur(paidMax + plan.need), `bezahlt ${eur(paidMax)} · noch offen ${eur(plan.need)}`)]
+      : [hero("Gesamtkosten", eur(paidTotal + totals.rest), `Soll ${eur(totals.soll)} · bezahlt ${eur(paidTotal)}`)];
+    big.push(`<div class="hero-card">
+        <div class="hero-label">Kredit noch abzuzahlen</div>
+        <div class="hero-value">${eur(debt)}</div>
+        <div class="hb-progress" role="img" aria-label="${Math.round(pct(repaid, drawn))} % getilgt"><span style="width:${pct(repaid, drawn).toFixed(1)}%"></span></div>
+        <div class="hero-sub">${eur(repaid)} getilgt von ${eur(drawn)}</div>
+      </div>`);
+    big.push(plan.hasBalance
+      ? hero("Frei auf dem Konto", eur(plan.usable), `nach ${eur(plan.reserve)} Rücklage · Stand ${app().formatGermanDate(plan.since)}`)
+      : hero("Frei auf dem Konto", "—", "Kontostand unter Finanzierung eintragen"));
+    document.getElementById("hbOverviewHero").innerHTML = big.join("");
+
+    // Where the money for the open part comes from, in Maximilian's order.
+    const fundBar = document.getElementById("hbFundBar");
+    const legend = document.getElementById("hbFundLegend");
+    const colors = ["#5fd3a6", "#4f9df0", "#ffbe3d", "#f4a3c4"];
+    if (plan.hasBalance && plan.need > 0) {
+      fundBar.innerHTML = plan.pots.map((pot, index) => {
+        const width = pct(pot.used, plan.need);
+        return width > 0 ? `<span style="width:${width.toFixed(2)}%;background:${colors[index]}" title="${esc(pot.name)}"></span>` : "";
+      }).join("");
+      legend.innerHTML = plan.pots.map((pot, index) => `<li><span class="hb-dot" style="background:${colors[index]}"></span>${esc(pot.name)}<span class="hb-legend-val">${eur(pot.used)}</span></li>`).join("");
+      setText("hbFundNote", plan.uncovered > 0.005
+        ? `Auch mit allem bleiben ${eur(plan.uncovered)} ungedeckt.`
+        : `Lücke bis zur Förderung ${eur(plan.gapBeforeGrant)}, zweites Darlehen ${eur(plan.secondNeeded)}.`);
+    } else {
+      fundBar.innerHTML = "";
+      legend.innerHTML = "";
+      setText("hbFundNote", plan.hasBalance ? "Kein offener Anteil mit Soll." : "Kontostand unter Finanzierung eintragen, dann rechnet Nomia die Töpfe.");
+    }
+
+    const gewerke = gewerkRows(mine);
+    setText("hbGewerkInfo", mine ? "Dein Anteil am Soll, bezahlt" : "Soll gesamt, bezahlt");
+    document.getElementById("hbGewerkList").innerHTML = gewerke.length
+      ? gewerke.map((entry) => `<div class="hb-gewerk">
+          <div class="hb-gewerk-head"><span class="hb-gewerk-name">${esc(entry.main)}<span class="text-muted"> · ${esc(entry.firm)}</span></span>
+          <span class="num">${entry.soll ? `${eur(entry.paid)} von ${eur(entry.soll)}` : `${eur(entry.paid)} bezahlt`}</span></div>
+          <div class="hb-progress${entry.soll && entry.paid > entry.soll + 0.005 ? " is-over" : ""}" role="img" aria-label="${Math.round(pct(entry.paid, entry.soll))} % bezahlt"><span style="width:${pct(entry.paid, entry.soll).toFixed(1)}%"></span></div>
+        </div>`).join("")
+      : `<p class="text-muted">Noch keine Gewerke.</p>`;
 
     const months = [...new Set(rows.map((row) => monthKey(row.date)).filter(Boolean))].sort();
     let running = 0;
     const cumulative = months.map((month) => {
-      running += sum(rows.filter((row) => monthKey(row.date) === month), (row) => num(row.amount));
+      running += sum(rows.filter((row) => monthKey(row.date) === month), (row) => (mine ? expenseShares(row).max : num(row.amount)));
       return round2(running);
     });
     app().ensureChart("hbTimelineChart", "hbTimelineChart", {
       type: "line",
       data: {
         labels: months.map(monthLabel),
-        datasets: [{ label: "Bezahlt", data: cumulative, borderColor: "#5fd3a6" }]
+        datasets: [{ label: mine ? "Dein Anteil bezahlt" : "Bezahlt", data: cumulative, borderColor: "#5fd3a6" }]
       }
     });
 
