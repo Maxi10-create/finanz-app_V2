@@ -25,7 +25,8 @@ const HAUSBAU_NUMBER_FIELDS = {
   total_budget: true, budget_max: true, budget_ingrid: true,
   area_max: true, area_ingrid: true, amount: true, share_max: true,
   sort_order: true, interest_rate: true, term_months: true,
-  monthly_rate: true, commitment_fee_rate: true, commitment_free_months: true
+  monthly_rate: true, commitment_fee_rate: true, commitment_free_months: true,
+  account_balance: true, reserve: true, loan_on_account: true, grant_amount: true, second_loan: true
 };
 
 const HAUSBAU_ENUMS = {
@@ -126,6 +127,43 @@ function saveHausbauRecord_(payload, auth) {
   }
 
   return { record: serializeObject_(record, entity.sheet) };
+}
+
+/**
+ * payload = { finance: { account_balance, account_date, reserve, loan_on_account, grant_amount,
+ * grant_month, second_loan } }. The house app hands over the financing plan Maximilian gave it;
+ * only the fields it sends change, so later edits in Nomia stay until the house app sends new ones.
+ * Allowed for the owner and for the backend token.
+ */
+function syncHausbauFinance_(payload, auth) {
+  if (!(auth && (auth.kind === 'service' || canSeeHausbau_(auth)))) throw new Error('Kein Zugriff auf diesen Bereich.');
+  const input = payload.finance || {};
+  const FIELDS = ['account_balance', 'account_date', 'reserve', 'loan_on_account', 'grant_amount', 'grant_month', 'second_loan'];
+  const changes = {};
+  FIELDS.forEach(function (field) {
+    if (input[field] === undefined) return;
+    if (HAUSBAU_NUMBER_FIELDS[field]) changes[field] = input[field] === '' || input[field] == null ? '' : toNumber_(input[field]);
+    else if (DATE_FIELDS[field]) changes[field] = normalizeDateString_(input[field]);
+    else changes[field] = normalizeMonthKey_(input[field]);
+  });
+  if (!Object.keys(changes).length) throw new Error('Keine Finanzierungsdaten.');
+  const sheet = SHEETS.BUILD_PROJECT;
+  const by = auth.kind === 'service' ? 'Hausbau-App' : normalizePersonName_(auth.user.display_name);
+  const now = new Date();
+  changes.updated_at = now;
+  changes.updated_by = by;
+  const current = readSheetObjects_(sheet).filter(function (row) {
+    return String(row.is_deleted || '').toLowerCase() !== 'ja';
+  })[0];
+  if (current) {
+    updateObjectById_(sheet, 'id', current.id, changes);
+    return { updated: 1 };
+  }
+  appendByHeaders_(sheet, Object.assign({
+    id: makeUniqueId_(sheet, 'id', 'BPRJ'), title: 'Hintersun 8', status: 'bau',
+    created_at: now, created_by: by, is_deleted: ''
+  }, changes));
+  return { updated: 1 };
 }
 
 /**

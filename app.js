@@ -6421,7 +6421,7 @@
     });
   }
   // The web app and the Apps Script backend are deployed separately; say so when they drift apart.
-  const MIN_BACKEND_VERSION = 15;
+  const MIN_BACKEND_VERSION = 16;
   function warnIfBackendOutdated(version) {
     const match = /^v(\d+)/.exec(String(version || ""));
     if (match && Number(match[1]) >= MIN_BACKEND_VERSION) return;
@@ -6551,7 +6551,9 @@
     formatGermanDate,
     todayDate,
     currentMonth,
-    currentUserName
+    currentUserName,
+    // Income minus the own share of all costs in a month (Hausbau uses it to carry the account on).
+    monthAvailable: (month) => getDashboardMetrics(month, { light: true }).available
   };
   window.onUserLoggedIn = onUserLoggedIn;
   window.loadAll = loadAll;
