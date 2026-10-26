@@ -12,7 +12,7 @@
     auszahlung: "Auszahlung",
     sondertilgung: "Sondertilgung",
     zinsanpassung: "Zinsanpassung (neuer Zinssatz)",
-    ratenaenderung: "Ratenänderung (neue Rate)",
+    ratenaenderung: "Rate (gilt ab diesem Monat)",
     gebuehr: "Gebühr",
     saldo_bank: "Saldo laut Bank",
     zuschuss: "Zuschuss erhalten"
@@ -857,6 +857,12 @@
     });
 
     root.addEventListener("submit", (event) => {
+      const rateForm = event.target.closest("form[data-hb-rate]");
+      if (rateForm) {
+        event.preventDefault();
+        saveRate(rateForm);
+        return;
+      }
       const form = event.target.closest("form[data-entity]");
       if (!form) return;
       event.preventDefault();
@@ -865,6 +871,13 @@
 
     root.addEventListener("change", (event) => {
       const target = event.target;
+      const rateForm = target.closest("form[data-hb-rate]");
+      if (rateForm && target.name === "month") {
+        const loan = creditLoans().find((row) => row.id === rateForm.dataset.hbRate);
+        const known = loan ? rateFor(loan, target.value) : null;
+        if (known !== null) rateForm.elements.rate.value = known;
+        return;
+      }
       if (target.id === "hbExpenseMain") {
         fillExpenseSubcategories();
         applyOrderToForm();
@@ -1489,6 +1502,14 @@
           <tr><td>Zinsen bis Laufzeitende (Plan)</td><td class="num">${eur(summary.interestRemaining)}</td></tr>
           ${conditionsRow(loan)}
         </tbody></table></div>
+        ${loan.first_rate_month ? `
+        <form class="form-grid compact-form hb-rate-form" data-hb-rate="${esc(loan.id)}">
+          ${field("Monat", `<input type="month" name="month" value="${esc(thisMonth())}" required />`)}
+          ${field("Rate laut Bank (€)", `<input type="number" name="rate" step="0.01" min="0" required value="${esc(rateFor(loan, thisMonth()) ?? "")}" />`)}
+          <div class="actions-row"><button class="btn btn-primary" type="submit">Rate speichern</button></div>
+          <p class="field-help full">Jeden Monat die tatsächliche Rate eintragen. Sie zählt in diesem Monat zu deinen Fixkosten und gilt als Schätzung für die nächsten Monate.</p>
+        </form>
+        ${rateHistory(loan, summary)}` : ""}
         <canvas id="hbLoanChart_${esc(loan.id)}"></canvas>
         <div class="form-grid compact-form">
           ${field("Was wäre wenn: Sondertilgung jetzt (€)", `<input type="number" id="hbWhatIf_${esc(loan.id)}" min="0" step="100" />`)}
@@ -1585,6 +1606,46 @@
       secondNeeded: pots[3].used,
       uncovered: Math.max(0, remaining)
     };
+  }
+
+  /** The rate entered for a month (event "Rate"), or null. */
+  function rateFor(loan, month) {
+    const event = loanEvents(loan.id).filter((row) => row.event_type === "ratenaenderung" && monthKey(row.date) === month).pop();
+    return event ? num(event.monthly_rate) : null;
+  }
+
+  /** Rates month by month since the first rate: entered ones and estimated ones. */
+  function rateHistory(loan, summary) {
+    const rows = summary.rows.filter((row) => row.repaying && row.month <= thisMonth()).slice(-24).reverse();
+    if (!rows.length) return "";
+    return `<div class="table-scroll"><table class="data-table hb-rate-table">
+      <thead><tr><th>Monat</th><th class="num">Rate</th><th class="num">Zinsen</th><th class="num">Tilgung</th><th class="num">Restschuld</th><th></th></tr></thead>
+      <tbody>${rows.map((row) => {
+        const entered = rateFor(loan, row.month) !== null;
+        return `<tr><td>${monthLabel(row.month)}</td><td class="num">${eur(row.payment)}</td><td class="num">${eur(row.interest)}</td><td class="num">${eur(row.principal)}</td><td class="num">${eur(row.balance)}</td><td class="text-muted">${entered ? "eingetragen" : "geschätzt"}</td></tr>`;
+      }).join("")}</tbody></table></div>`;
+  }
+
+  /** Saves the bank's rate for one month; a second entry for the same month replaces the first. */
+  async function saveRate(form) {
+    const loanId = form.dataset.hbRate;
+    const month = form.elements.month.value;
+    const rate = num(form.elements.rate.value);
+    if (!month || !(rate > 0)) return;
+    const existing = loanEvents(loanId).filter((row) => row.event_type === "ratenaenderung" && monthKey(row.date) === month).pop();
+    const record = { loan_id: loanId, date: `${month}-01`, event_type: "ratenaenderung", monthly_rate: rate, amount: "", note: "Rate laut Bank" };
+    if (existing) record.id = existing.id;
+    const button = form.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      const result = await app().apiPost("hausbauSave", { entity: "loanEvent", record });
+      await app().refreshAfterWrite(result);
+      app().showMessage(`Rate ${monthLabel(month)}: ${eur(rate)} gespeichert.`, "success");
+    } catch (error) {
+      app().showMessage(error.message || "Speichern fehlgeschlagen.", "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function renderFinance() {
