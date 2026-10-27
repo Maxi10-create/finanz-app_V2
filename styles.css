@@ -2507,3 +2507,22 @@ details.hb-more[open] > summary { margin-bottom: 12px; }
 .hb-gewerk-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
 .hb-gewerk-name { font-weight: 600; }
 @media (max-width: 760px) { .hb-big { grid-template-columns: 1fr; } .hb-scope { width: 100%; } .hb-scope-btn { flex: 1; } }
+
+/* Hausbau: Bewegung nach Apple-Vorbild (kurz, federnd, mit Richtung; reduced-motion schaltet alles ab) */
+@keyframes hb-enter-next { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes hb-enter-prev { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes hb-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes hb-sheet-in { from { opacity: 0; transform: translateY(18px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes hb-fade { from { opacity: 0; } to { opacity: 1; } }
+#hausbauRoot .hb-section.hb-enter-next { animation: hb-enter-next 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+#hausbauRoot .hb-section.hb-enter-prev { animation: hb-enter-prev 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.hb-progress span,
+.hb-progress-lg span,
+.hb-fundbar span { transform-origin: left center; animation: hb-grow 0.75s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.hb-dialog[open] { animation: hb-sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.hb-dialog::backdrop { animation: hb-fade 0.25s ease both; }
+#hausbauRoot .hb-tab,
+.hb-scope-btn { transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s cubic-bezier(0.22, 1, 0.36, 1); }
+#hausbauRoot .hb-tab:active,
+#hausbauRoot .btn:active,
+.hb-scope-btn:active { transform: scale(0.96); }

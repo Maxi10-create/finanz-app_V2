@@ -805,11 +805,27 @@
   }
 
   function bindEvents(root) {
+    let swipeStart = null;
+    root.addEventListener("touchstart", (event) => {
+      const touch = event.touches[0];
+      swipeStart = event.target.closest("input, textarea, select, table, canvas") ? null : { x: touch.clientX, y: touch.clientY };
+    }, { passive: true });
+    root.addEventListener("touchcancel", () => { swipeStart = null; }, { passive: true });
+    root.addEventListener("touchend", (event) => {
+      if (!swipeStart) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - swipeStart.x;
+      const dy = touch.clientY - swipeStart.y;
+      swipeStart = null;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const index = SWIPE_SECTIONS.indexOf(activeSection);
+      const next = SWIPE_SECTIONS[index + (dx < 0 ? 1 : -1)];
+      if (index >= 0 && next) goToSection(next);
+    }, { passive: true });
     root.addEventListener("click", (event) => {
       const sectionBtn = event.target.closest("[data-hb-section]");
       if (sectionBtn) {
-        activeSection = sectionBtn.dataset.hbSection;
-        showSection();
+        goToSection(sectionBtn.dataset.hbSection);
         return;
       }
       const scopeBtn = event.target.closest("[data-hb-scope]");
@@ -910,12 +926,36 @@
     });
   }
 
+  // Wischen wechselt zwischen diesen Tabs; die Einstellungen (Zahnrad) bleiben außen vor.
+  const SWIPE_SECTIONS = ["overview", "orders", "expenses", "ingrid", "loans"];
+  let sectionDirection = 1;
+
+  function sectionRank(name) {
+    const index = SWIPE_SECTIONS.indexOf(name);
+    return index < 0 ? SWIPE_SECTIONS.length : index;
+  }
+
+  function goToSection(name) {
+    if (name === activeSection) return;
+    sectionDirection = sectionRank(name) >= sectionRank(activeSection) ? 1 : -1;
+    activeSection = name;
+    showSection();
+  }
+
   function showSection() {
     document.querySelectorAll("#hbSubnav [data-hb-section]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.hbSection === activeSection);
     });
     document.querySelectorAll("#hausbauRoot .hb-section").forEach((section) => {
-      section.hidden = section.dataset.section !== activeSection;
+      const show = section.dataset.section === activeSection;
+      const wasHidden = section.hidden;
+      section.hidden = !show;
+      if (show && wasHidden) {
+        // Neuen Tab von der Wischrichtung her einblenden (Animation nur per CSS, reduced-motion schaltet sie ab).
+        section.classList.remove("hb-enter-next", "hb-enter-prev");
+        void section.offsetWidth;
+        section.classList.add(sectionDirection > 0 ? "hb-enter-next" : "hb-enter-prev");
+      }
     });
     requestAnimationFrame(() => {
       ["hbTimelineChart"].concat(creditLoans().map((loan) => `hbLoanChart_${loan.id}`))
