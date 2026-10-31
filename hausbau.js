@@ -257,7 +257,9 @@
   function computeLoanSchedule(loan, extra = null) {
     const events = loanEvents(loan.id);
     const amount = num(loan.amount);
-    const firstRate = monthKey(loan.first_rate_month);
+    // Ohne eingetragene erste Rate gilt der Monat der ersten eingetragenen Rate.
+    const enteredRateMonths = events.filter((event) => event.event_type === "ratenaenderung").map((event) => monthKey(event.date)).filter(Boolean).sort();
+    const firstRate = monthKey(loan.first_rate_month) || enteredRateMonths[0] || "";
     const payouts = events.filter((event) => event.event_type === "auszahlung");
     const eventMonths = events.map((event) => monthKey(event.date)).filter(Boolean);
     const startCandidates = eventMonths.concat(firstRate ? [firstRate] : []);
@@ -1593,14 +1595,13 @@
           <tr><td>Zinsen bis Laufzeitende (Plan)</td><td class="num">${eur(summary.interestRemaining)}</td></tr>
           ${conditionsRow(loan)}
         </tbody></table></div>
-        ${loan.first_rate_month ? `
         <form class="form-grid compact-form hb-rate-form" data-hb-rate="${esc(loan.id)}">
           ${field("Monat", `<input type="month" name="month" value="${esc(thisMonth())}" required />`)}
           ${field("Rate laut Bank (€)", `<input type="number" name="rate" step="0.01" min="0" required value="${esc(rateFor(loan, thisMonth()) ?? "")}" />`)}
           <div class="actions-row"><button class="btn btn-primary" type="submit">Rate speichern</button></div>
           <p class="field-help full">Jeden Monat die tatsächliche Rate eintragen. Sie zählt in diesem Monat zu deinen Fixkosten und gilt als Schätzung für die nächsten Monate.</p>
         </form>
-        ${rateHistory(loan, summary)}` : ""}
+        ${rateHistory(loan, summary)}
         <canvas id="hbLoanChart_${esc(loan.id)}"></canvas>
         <div class="form-grid compact-form">
           ${field("Was wäre wenn: Sondertilgung jetzt (€)", `<input type="number" id="hbWhatIf_${esc(loan.id)}" min="0" step="100" />`)}
@@ -1728,7 +1729,10 @@
     const loanId = form.dataset.hbRate;
     const month = form.elements.month.value;
     const rate = num(form.elements.rate.value);
-    if (!month || !(rate > 0)) return;
+    if (!month || !(rate > 0)) {
+      app().showMessage("Bitte Monat und Rate in Euro eintragen.", "error");
+      return;
+    }
     const existing = loanEvents(loanId).filter((row) => row.event_type === "ratenaenderung" && monthKey(row.date) === month).pop();
     const record = { loan_id: loanId, date: `${month}-01`, event_type: "ratenaenderung", monthly_rate: rate, amount: "", note: "Rate laut Bank" };
     if (existing) record.id = existing.id;
