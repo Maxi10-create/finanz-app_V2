@@ -3011,19 +3011,24 @@
   function categoryTrendValue(main, sub = "") {
     return JSON.stringify([main, sub]);
   }
-  function categoryAmountForMonth(month, main, sub) {
+  // scope "mine": only my share; scope "together": the full amount of the household.
+  function categoryAmountForMonth(month, main, sub, scope = "mine") {
+    const together = scope === "together";
     const matches = (row) =>
       String(row.main_category || "") === main &&
       (!sub || String(row.sub_category || "") === sub);
     const transactions = filteredTransactionsForMonth(month)
       .filter(matches)
-      .reduce((sum, row) => sum + getCurrentUserAmount(row), 0);
+      .reduce((sum, row) => sum + (together ? (isSettlement(row) ? 0 : Number(row.amount) || 0) : getCurrentUserAmount(row)), 0);
     const trips = filteredTripExpensesForMonth(month)
       .filter(matches)
-      .reduce((sum, row) => sum + getVacationCurrentUserAmount(row), 0);
+      .reduce((sum, row) => sum + (together ? Number(row.amount) || 0 : getVacationCurrentUserAmount(row)), 0);
     const fixed = activeFixedCostsForMonth(month)
       .filter(matches)
-      .reduce((sum, row) => sum + getUserShareFromAmount(row, normalizeFrequency(row.amount, row.frequency)), 0);
+      .reduce((sum, row) => {
+        const amount = normalizeFrequency(row.amount, row.frequency);
+        return sum + (together ? amount : getUserShareFromAmount(row, amount));
+      }, 0);
     return transactions + trips + fixed;
   }
   function selectCategoryTrend(main, sub = "", { scroll = false } = {}) {
@@ -3072,6 +3077,8 @@
     const values2 = percentMode
       ? raw.map((value, index) => toPercent(value, monthlyIncome(months[index])))
       : raw;
+    // Zusätzlich zu meinem Anteil: alles zusammen (nur in Euro, Einkommen je Monat ist nicht getrennt).
+    const together = percentMode ? null : months.map((month) => categoryAmountForMonth(month, main, sub, "together"));
     const now = currentMonth();
     const pastIndexes = months.map((m, i) => (m <= now ? i : -1)).filter((i) => i >= 0);
     const pastRaw = pastIndexes.map((i) => raw[i]);
@@ -3122,8 +3129,17 @@
             fill: false,
             order: 0
           },
+          ...(together ? [{
+            label: "Zusammen mit Jana",
+            data: together,
+            backgroundColor: hexToRgba(color, 0.18),
+            borderColor: hexToRgba(color, 0.7),
+            borderWidth: 1,
+            borderRadius: 6,
+            order: 2
+          }] : []),
           {
-            label: sub ? `${main} › ${sub}` : main,
+            label: together ? "Nur ich" : sub ? `${main} › ${sub}` : main,
             data: values2,
             backgroundColor: months.map((m) => (m === analysis ? color : hexToRgba(color, 0.55))),
             borderRadius: 6,

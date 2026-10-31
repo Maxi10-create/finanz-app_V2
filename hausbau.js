@@ -257,7 +257,9 @@
   function computeLoanSchedule(loan, extra = null) {
     const events = loanEvents(loan.id);
     const amount = num(loan.amount);
-    const firstRate = monthKey(loan.first_rate_month);
+    // Ohne eingetragene erste Rate gilt der Monat der ersten eingetragenen Rate.
+    const enteredRateMonths = events.filter((event) => event.event_type === "ratenaenderung").map((event) => monthKey(event.date)).filter(Boolean).sort();
+    const firstRate = monthKey(loan.first_rate_month) || enteredRateMonths[0] || "";
     const payouts = events.filter((event) => event.event_type === "auszahlung");
     const eventMonths = events.map((event) => monthKey(event.date)).filter(Boolean);
     const startCandidates = eventMonths.concat(firstRate ? [firstRate] : []);
@@ -805,11 +807,27 @@
   }
 
   function bindEvents(root) {
+    let swipeStart = null;
+    root.addEventListener("touchstart", (event) => {
+      const touch = event.touches[0];
+      swipeStart = event.target.closest("input, textarea, select, table, canvas") ? null : { x: touch.clientX, y: touch.clientY };
+    }, { passive: true });
+    root.addEventListener("touchcancel", () => { swipeStart = null; }, { passive: true });
+    root.addEventListener("touchend", (event) => {
+      if (!swipeStart) return;
+      const touch = event.changedTouches[0];
+      const dx = touch.clientX - swipeStart.x;
+      const dy = touch.clientY - swipeStart.y;
+      swipeStart = null;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const index = SWIPE_SECTIONS.indexOf(activeSection);
+      const next = SWIPE_SECTIONS[index + (dx < 0 ? 1 : -1)];
+      if (index >= 0 && next) goToSection(next);
+    }, { passive: true });
     root.addEventListener("click", (event) => {
       const sectionBtn = event.target.closest("[data-hb-section]");
       if (sectionBtn) {
-        activeSection = sectionBtn.dataset.hbSection;
-        showSection();
+        goToSection(sectionBtn.dataset.hbSection);
         return;
       }
       const scopeBtn = event.target.closest("[data-hb-scope]");
@@ -910,12 +928,36 @@
     });
   }
 
+  // Wischen wechselt zwischen diesen Tabs; die Einstellungen (Zahnrad) bleiben außen vor.
+  const SWIPE_SECTIONS = ["overview", "orders", "expenses", "ingrid", "loans"];
+  let sectionDirection = 1;
+
+  function sectionRank(name) {
+    const index = SWIPE_SECTIONS.indexOf(name);
+    return index < 0 ? SWIPE_SECTIONS.length : index;
+  }
+
+  function goToSection(name) {
+    if (name === activeSection) return;
+    sectionDirection = sectionRank(name) >= sectionRank(activeSection) ? 1 : -1;
+    activeSection = name;
+    showSection();
+  }
+
   function showSection() {
     document.querySelectorAll("#hbSubnav [data-hb-section]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.hbSection === activeSection);
     });
     document.querySelectorAll("#hausbauRoot .hb-section").forEach((section) => {
-      section.hidden = section.dataset.section !== activeSection;
+      const show = section.dataset.section === activeSection;
+      const wasHidden = section.hidden;
+      section.hidden = !show;
+      if (show && wasHidden) {
+        // Neuen Tab von der Wischrichtung her einblenden (Animation nur per CSS, reduced-motion schaltet sie ab).
+        section.classList.remove("hb-enter-next", "hb-enter-prev");
+        void section.offsetWidth;
+        section.classList.add(sectionDirection > 0 ? "hb-enter-next" : "hb-enter-prev");
+      }
     });
     requestAnimationFrame(() => {
       ["hbTimelineChart"].concat(creditLoans().map((loan) => `hbLoanChart_${loan.id}`))
@@ -1553,14 +1595,13 @@
           <tr><td>Zinsen bis Laufzeitende (Plan)</td><td class="num">${eur(summary.interestRemaining)}</td></tr>
           ${conditionsRow(loan)}
         </tbody></table></div>
-        ${loan.first_rate_month ? `
         <form class="form-grid compact-form hb-rate-form" data-hb-rate="${esc(loan.id)}">
           ${field("Monat", `<input type="month" name="month" value="${esc(thisMonth())}" required />`)}
           ${field("Rate laut Bank (€)", `<input type="number" name="rate" step="0.01" min="0" required value="${esc(rateFor(loan, thisMonth()) ?? "")}" />`)}
           <div class="actions-row"><button class="btn btn-primary" type="submit">Rate speichern</button></div>
           <p class="field-help full">Jeden Monat die tatsächliche Rate eintragen. Sie zählt in diesem Monat zu deinen Fixkosten und gilt als Schätzung für die nächsten Monate.</p>
         </form>
-        ${rateHistory(loan, summary)}` : ""}
+        ${rateHistory(loan, summary)}
         <canvas id="hbLoanChart_${esc(loan.id)}"></canvas>
         <div class="form-grid compact-form">
           ${field("Was wäre wenn: Sondertilgung jetzt (€)", `<input type="number" id="hbWhatIf_${esc(loan.id)}" min="0" step="100" />`)}
@@ -1688,7 +1729,10 @@
     const loanId = form.dataset.hbRate;
     const month = form.elements.month.value;
     const rate = num(form.elements.rate.value);
-    if (!month || !(rate > 0)) return;
+    if (!month || !(rate > 0)) {
+      app().showMessage("Bitte Monat und Rate in Euro eintragen.", "error");
+      return;
+    }
     const existing = loanEvents(loanId).filter((row) => row.event_type === "ratenaenderung" && monthKey(row.date) === month).pop();
     const record = { loan_id: loanId, date: `${month}-01`, event_type: "ratenaenderung", monthly_rate: rate, amount: "", note: "Rate laut Bank" };
     if (existing) record.id = existing.id;
