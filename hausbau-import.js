@@ -133,6 +133,7 @@
     return alive(app().data.transactions).filter((row) =>
       String(row.booking_type || "expense").toLowerCase() !== "settlement" &&
       String(row.main_category || "").trim().toLowerCase() === "hausbau" &&
+      String(row.sub_category || "").trim().toLowerCase() !== "hausrate" &&
       String(row.owner_user || "").trim() === me
     );
   }

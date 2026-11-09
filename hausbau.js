@@ -70,6 +70,8 @@
     [(main) => main === "Finanzierungskosten", "MAX"]
   ];
   const MAX_LOAN_MONTHS = 600;
+  /** Used for the Restschuld when the loan has no rate entered (variabler Zins, Schätzung). */
+  const ESTIMATED_RATE = 3.4;
 
   let activeSection = "overview";
   // "max": Maximilian's part of everything; "all": the whole house with Ingrid's part.
@@ -247,9 +249,22 @@
   // Schedules are needed for every month of every chart, so compute each once per data load.
   let scheduleCache = { source: null, byLoan: new Map() };
 
+  /** Monthly payments booked as household expense "Hausbau > Hausrate", summed per month. */
+  function paidRateByMonth() {
+    const map = new Map();
+    alive(app()?.data?.transactions)
+      .filter((row) => String(row.main_category || "").trim().toLowerCase() === "hausbau" &&
+        String(row.sub_category || "").trim().toLowerCase() === "hausrate")
+      .forEach((row) => {
+        const month = monthKey(row.month_key || row.date);
+        if (month) map.set(month, round2((map.get(month) || 0) + num(row.amount)));
+      });
+    return map;
+  }
+
   function loanSchedule(loan, extra = null) {
     if (extra) return computeLoanSchedule(loan, extra);
-    if (scheduleCache.source !== data()) scheduleCache = { source: data(), byLoan: new Map() };
+    if (scheduleCache.source !== app()?.data) scheduleCache = { source: app()?.data, byLoan: new Map() };
     if (!scheduleCache.byLoan.has(loan.id)) scheduleCache.byLoan.set(loan.id, computeLoanSchedule(loan));
     return scheduleCache.byLoan.get(loan.id);
   }
@@ -258,7 +273,9 @@
     const events = loanEvents(loan.id);
     const amount = num(loan.amount);
     // Ohne eingetragene erste Rate gilt der Monat der ersten eingetragenen Rate.
-    const enteredRateMonths = events.filter((event) => event.event_type === "ratenaenderung").map((event) => monthKey(event.date)).filter(Boolean).sort();
+    const paid = paidRateByMonth();
+    const enteredRateMonths = events.filter((event) => event.event_type === "ratenaenderung").map((event) => monthKey(event.date))
+      .concat([...paid.keys()]).filter(Boolean).sort();
     const firstRate = monthKey(loan.first_rate_month) || enteredRateMonths[0] || "";
     const payouts = events.filter((event) => event.event_type === "auszahlung");
     const eventMonths = events.map((event) => monthKey(event.date)).filter(Boolean);
@@ -267,7 +284,7 @@
     const start = startCandidates.sort()[0];
     const assumeFullPayout = !payouts.length;
 
-    let rate = num(loan.interest_rate);
+    let rate = num(loan.interest_rate) || ESTIMATED_RATE;
     let monthlyRate = num(loan.monthly_rate);
     let balance = 0;
     let drawn = 0;
@@ -305,7 +322,8 @@
       let payment = interest;
       let principal = 0;
       if (repaying) {
-        payment = Math.min(monthlyRate, round2(balance + interest));
+        // Die im Monat gebuchte Rate gilt, sonst die zuletzt bekannte.
+        payment = Math.min(paid.has(month) ? paid.get(month) : monthlyRate, round2(balance + interest));
         principal = round2(payment - interest);
       }
       balance = round2(balance - principal - extraRepayment);
@@ -375,7 +393,8 @@
 
   /** Virtual fixed costs for app.js: only loan costs, never building costs. */
   function loanFixedCostRows(month) {
-    if (!data()) return [];
+    // Ist die Rate als Haushaltsbuchung erfasst, zählt sie dort schon; sonst doppelt.
+    if (!data() || paidRateByMonth().has(month)) return [];
     return creditLoans().map((loan) => {
       const row = loanSchedule(loan).find((entry) => entry.month === month);
       const share = loan.share_max === "" || loan.share_max == null ? 100 : num(loan.share_max);
@@ -1708,6 +1727,8 @@
 
   /** The rate entered for a month (event "Rate"), or null. */
   function rateFor(loan, month) {
+    const booked = paidRateByMonth().get(month);
+    if (booked) return booked;
     const event = loanEvents(loan.id).filter((row) => row.event_type === "ratenaenderung" && monthKey(row.date) === month).pop();
     return event ? num(event.monthly_rate) : null;
   }
