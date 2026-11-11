@@ -2526,3 +2526,8 @@ details.hb-more[open] > summary { margin-bottom: 12px; }
 #hausbauRoot .hb-tab:active,
 #hausbauRoot .btn:active,
 .hb-scope-btn:active { transform: scale(0.96); }
+
+/* Handy: iOS zoomt beim Antippen von Feldern mit weniger als 16 px Schrift herein. */
+@media (max-width: 760px) {
+  input, select, textarea { font-size: 16px; }
+}
