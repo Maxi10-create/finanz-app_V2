@@ -2530,4 +2530,6 @@ details.hb-more[open] > summary { margin-bottom: 12px; }
 /* Handy: iOS zoomt beim Antippen von Feldern mit weniger als 16 px Schrift herein. */
 @media (max-width: 760px) {
   input, select, textarea { font-size: 16px; }
+  /* Felder bleiben in ihrer Spalte, sonst ragen sie über den Rand und iOS zoomt beim Antippen. */
+  label > input, label > select, label > textarea, form input, form select, form textarea { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 }
